@@ -118,7 +118,9 @@ class NetworkVisualizer:
                 color = 'rgba(220, 20, 60, 0.8)'  # Crimson
                 marker_symbol = 'circle'
                 size = 15
-                labels = self.label_names if self.label_names else [f"Class {i+1}" for i in range(layer_size)]
+                labels = [f"Class {i+1}" for i in range(layer_size)]
+                if self.label_names is not None and len(self.label_names) > 0:
+                    labels = [self.label_names[i] if i < len(self.label_names) else f"Class {i+1}" for i in range(layer_size)]
             else:  # Hidden layers
                 color = 'rgba(50, 205, 50, 0.8)'  # Lime green
                 marker_symbol = 'circle'
