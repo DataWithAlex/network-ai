@@ -194,20 +194,57 @@ if st.session_state.model is not None:
     with tab2:
         st.header("Neural Network Architecture")
         st.markdown("""
-        This visualization shows the architecture of the neural network:
+        This interactive visualization shows the complete architecture of the neural network:
+        
+        ### Layer Types:
         - **Blue blocks**: Input layer nodes representing dataset features
-        - **Green blocks**: Fully connected (dense) layers
-        - **Purple blocks**: Activation functions
-        - **Gray blocks**: Dropout layers (if used)
+        - **Green blocks**: Fully connected (dense) layers with weights and biases
+        - **Purple circles**: Activation functions that introduce non-linearity
+        - **Gray blocks**: Dropout layers (regularization technique)
         - **Red blocks**: Output layer representing classes
         
-        **Hover over** any component to see more details about that layer including input/output dimensions.
+        ### Visualization Features:
+        - **Hover over any component** to see detailed statistics including weight distributions
+        - **Connections between layers** show data flow and transformation
+        - **Dotted lines** provide explanatory annotations
+        - **Connection color** indicates weight polarity (green=positive, red=negative)
+        - **Connection thickness** indicates weight magnitude
+        
+        This visualization helps understand how data flows through the network and how each layer transforms the data.
         """)
         
         # Display the interactive visualization
         st.subheader("Interactive Architecture Diagram")
         fig = st.session_state.visualizer.plot_network_interactive()
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Model parameter details
+        st.subheader("Model Parameter Details")
+        hyperparams = st.session_state.model.get_hyperparameters()
+        st.write(f"**Total Parameters:** {hyperparams['Total Parameters']:,}")
+        
+        # Display parameter breakdown by layer
+        weights = st.session_state.model.get_layer_weights()
+        
+        # Create a dataframe of layer parameters
+        layer_params = []
+        total_params = 0
+        
+        for layer_name, weight_data in weights.items():
+            weight_count = np.prod(weight_data['weight'].shape)
+            bias_count = len(weight_data['bias']) if weight_data['bias'] is not None else 0
+            params = weight_count + bias_count
+            total_params += params
+            
+            layer_params.append({
+                'Layer': layer_name,
+                'Weight Shape': str(weight_data['weight'].shape),
+                'Parameters': params,
+                'Percentage': f"{100 * params / hyperparams['Total Parameters']:.1f}%"
+            })
+        
+        param_df = pd.DataFrame(layer_params)
+        st.dataframe(param_df)
         
         # Keep the static visualization as an option
         if st.checkbox("Show Traditional Network Diagram"):

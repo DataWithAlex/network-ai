@@ -9,6 +9,7 @@ import streamlit as st
 import torch
 import plotly.express as px
 from plotly.subplots import make_subplots
+import math
 
 class NetworkVisualizer:
     def __init__(self, model, feature_names, label_names):
@@ -27,6 +28,19 @@ class NetworkVisualizer:
             'dropout': 'rgba(169, 169, 169, 0.6)',  # Dark gray
             'batch_norm': 'rgba(255, 215, 0, 0.6)',  # Gold
             'fc': 'rgba(60, 179, 113, 0.7)'      # Medium sea green
+        }
+        
+        # Define shapes for different layer types
+        self.layer_shapes = {
+            'input': 'rect',
+            'hidden': 'rect',
+            'output': 'rect',
+            'conv': 'rect',
+            'pool': 'rect',
+            'activation': 'circle',
+            'dropout': 'rect',
+            'batch_norm': 'rect',
+            'fc': 'rect'
         }
 
     def plot_network_architecture(self):
@@ -63,24 +77,25 @@ class NetworkVisualizer:
         for i in range(output_size):
             class_name = self.label_names[i] if i < len(self.label_names) else f"Class {i+1}"
             G.add_node(f"output_{i}", layer="output", label=class_name, 
-                       pos=(len(hidden_sizes) + 1, -i))
+                      pos=(len(hidden_sizes)+1, -i))
             
-            # Add edges from last hidden layer
+            # Connect from last hidden layer
             for j in range(hidden_sizes[-1]):
                 G.add_edge(f"hidden_{len(hidden_sizes)-1}_{j}", f"output_{i}")
         
-        # Create the figure
-        fig = plt.figure(figsize=(12, 8))
+        # Extract positions for visualization
         pos = nx.get_node_attributes(G, 'pos')
         
-        # Separate nodes by layer for coloring
-        input_nodes = [node for node, attr in G.nodes(data=True) if attr['layer'] == 'input']
-        hidden_nodes = [node for node, attr in G.nodes(data=True) if 'hidden' in attr['layer']]
-        output_nodes = [node for node, attr in G.nodes(data=True) if attr['layer'] == 'output']
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        # Draw the network
-        nx.draw_networkx_nodes(G, pos, nodelist=input_nodes, node_color='skyblue', node_size=500, alpha=0.8)
-        nx.draw_networkx_nodes(G, pos, nodelist=hidden_nodes, node_color='lightgreen', node_size=500, alpha=0.8)
+        # Draw nodes with different colors for each layer
+        input_nodes = [node for node, attrs in G.nodes(data=True) if attrs['layer'] == 'input']
+        hidden_nodes = [node for node, attrs in G.nodes(data=True) if 'hidden' in attrs['layer']]
+        output_nodes = [node for node, attrs in G.nodes(data=True) if attrs['layer'] == 'output']
+        
+        nx.draw_networkx_nodes(G, pos, nodelist=input_nodes, node_color='royalblue', node_size=500, alpha=0.8)
+        nx.draw_networkx_nodes(G, pos, nodelist=hidden_nodes, node_color='limegreen', node_size=500, alpha=0.8)
         nx.draw_networkx_nodes(G, pos, nodelist=output_nodes, node_color='salmon', node_size=500, alpha=0.8)
         
         # Get the weights and color edges based on weight values
@@ -106,7 +121,7 @@ class NetworkVisualizer:
         return fig
 
     def plot_network_interactive(self):
-        """Create an interactive layered network visualization similar to VGG diagram"""
+        """Create an interactive detailed network visualization"""
         # Extract model structure and weights
         hyperparams = self.model.get_hyperparameters()
         layer_weights = self.model.get_layer_weights()
@@ -128,10 +143,12 @@ class NetworkVisualizer:
                 'type': 'input',
                 'size': input_size,
                 'details': f'Input Features: {input_size}',
-                'feature_names': self.feature_names
+                'feature_names': self.feature_names,
+                'index': 0
             })
             
             # Add hidden layers with activations and dropout
+            layer_index = 1
             for i, size in enumerate(hidden_sizes):
                 # Linear layer
                 all_layers.append({
@@ -139,16 +156,22 @@ class NetworkVisualizer:
                     'type': 'fc',
                     'size': size,
                     'details': f'Fully Connected: {size} neurons',
-                    'weight_shape': f'({size} x {input_size if i==0 else hidden_sizes[i-1]})'
+                    'weight_shape': f'({size} x {input_size if i==0 else hidden_sizes[i-1]})',
+                    'layer_key': f'linear_{i}',
+                    'prev_size': input_size if i==0 else hidden_sizes[i-1],
+                    'index': layer_index
                 })
+                layer_index += 1
                 
                 # Activation layer
                 all_layers.append({
                     'name': f'{activation_fn}-{i+1}',
                     'type': 'activation',
                     'size': size,
-                    'details': f'{activation_fn} Activation'
+                    'details': f'{activation_fn} Activation',
+                    'index': layer_index
                 })
+                layer_index += 1
                 
                 # Dropout layer (if applicable)
                 if dropout_rate > 0:
@@ -156,8 +179,10 @@ class NetworkVisualizer:
                         'name': f'Dropout-{i+1}',
                         'type': 'dropout',
                         'size': size,
-                        'details': f'Dropout (p={dropout_rate})'
+                        'details': f'Dropout (p={dropout_rate})',
+                        'index': layer_index
                     })
+                    layer_index += 1
             
             # Add output layer
             all_layers.append({
@@ -165,7 +190,10 @@ class NetworkVisualizer:
                 'type': 'output',
                 'size': output_size,
                 'details': f'Output Classes: {output_size}',
-                'label_names': self.label_names
+                'label_names': self.label_names,
+                'layer_key': 'linear_output',
+                'prev_size': hidden_sizes[-1],
+                'index': layer_index
             })
             
             # Create figure
@@ -173,9 +201,126 @@ class NetworkVisualizer:
             
             # Calculate dimensions for visualization
             max_layer_size = max([layer['size'] for layer in all_layers])
-            layer_width = 100  # Base width for all layers
-            layer_spacing = 150  # Horizontal spacing between layers
+            layer_width = 120  # Base width for all layers
+            layer_height_unit = 20  # Height per neuron
+            layer_spacing = 200  # Horizontal spacing between layers
             neuron_spacing = 40  # Vertical spacing between neurons in the same layer
+            
+            # Draw connectors between layers (before drawing shapes to be in background)
+            for i in range(len(all_layers)-1):
+                current_layer = all_layers[i]
+                next_layer = all_layers[i+1]
+                
+                # For linear layers, draw connections to next layer with weight information
+                if current_layer['type'] in ['fc', 'input'] and next_layer['type'] in ['fc', 'activation', 'output']:
+                    # Get weight information if available
+                    weights_info = None
+                    if 'layer_key' in current_layer and current_layer['layer_key'] in layer_weights:
+                        weights_info = layer_weights[current_layer['layer_key']]
+                    
+                    # Determine number of connections to show (max 10 per layer for clarity)
+                    current_size = current_layer['size']
+                    next_size = next_layer['size']
+                    
+                    # If too many connections, just show a representative sample with explanation
+                    if current_size * next_size > 20:
+                        # Calculate start and end positions for representative connections
+                        x0 = current_layer['index'] * layer_spacing
+                        x1 = next_layer['index'] * layer_spacing
+                        
+                        # Draw dotted line between centers of layers with explanation
+                        fig.add_trace(go.Scatter(
+                            x=[x0 + layer_width/2, x1 - layer_width/2],
+                            y=[0, 0],
+                            mode="lines",
+                            line=dict(width=2, color="rgba(100, 100, 100, 0.8)", dash="dot"),
+                            text=f"{current_size} x {next_size} = {current_size * next_size} connections",
+                            hoverinfo="text",
+                            showlegend=False
+                        ))
+                        
+                        # Add annotation about connections
+                        fig.add_annotation(
+                            x=(x0 + x1)/2,
+                            y=0,
+                            text=f"{current_size}×{next_size}",
+                            showarrow=False,
+                            font=dict(size=10, color="rgba(100, 100, 100, 0.8)"),
+                            bgcolor="rgba(255, 255, 255, 0.7)"
+                        )
+                    else:
+                        # Draw actual connections between individual neurons
+                        for j in range(min(current_size, 5)):
+                            y0 = (j - min(current_size, 10)/2 + 0.5) * neuron_spacing
+                            
+                            for k in range(min(next_size, 5)):
+                                y1 = (k - min(next_size, 10)/2 + 0.5) * neuron_spacing
+                                
+                                # Determine connection weight if available
+                                weight_value = None
+                                if weights_info is not None:
+                                    if j < weights_info['weight'].shape[1] and k < weights_info['weight'].shape[0]:
+                                        weight_value = weights_info['weight'][k, j]
+                                
+                                # Determine line color based on weight
+                                line_color = "rgba(100, 100, 100, 0.3)"
+                                line_width = 1
+                                if weight_value is not None:
+                                    # Normalize weight to determine color intensity
+                                    weight_abs = abs(weight_value)
+                                    alpha = min(0.8, 0.2 + weight_abs * 0.6)
+                                    if weight_value > 0:
+                                        line_color = f"rgba(0, 100, 0, {alpha})"  # Green for positive
+                                    else:
+                                        line_color = f"rgba(220, 0, 0, {alpha})"  # Red for negative
+                                    
+                                    # Adjust line width based on weight magnitude
+                                    line_width = 1 + 2 * min(1, weight_abs)
+                                
+                                # Draw connection
+                                fig.add_trace(go.Scatter(
+                                    x=[current_layer['index'] * layer_spacing + layer_width/2, 
+                                       next_layer['index'] * layer_spacing - layer_width/2],
+                                    y=[y0, y1],
+                                    mode="lines",
+                                    line=dict(width=line_width, color=line_color),
+                                    hoverinfo="text",
+                                    text=f"Weight: {weight_value:.4f}" if weight_value is not None else "Connection",
+                                    showlegend=False
+                                ))
+            
+            # Draw explanatory annotations
+            # Annotate data flow
+            fig.add_annotation(
+                x=(all_layers[0]['index'] * layer_spacing + all_layers[1]['index'] * layer_spacing) / 2,
+                y=max_layer_size * neuron_spacing / 2 + 50,
+                text="Data flow →",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgba(100, 100, 100, 0.7)",
+                ax=50,
+                ay=0,
+                xref="x",
+                yref="y"
+            )
+            
+            # Annotate weights
+            fig.add_annotation(
+                x=(all_layers[0]['index'] * layer_spacing + all_layers[1]['index'] * layer_spacing) / 2,
+                y=max_layer_size * neuron_spacing / 2 - 50,
+                text="Weights transform inputs",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgba(100, 100, 100, 0.7)",
+                ax=-20,
+                ay=-20,
+                xref="x",
+                yref="y"
+            )
             
             # Draw each layer
             for i, layer in enumerate(all_layers):
@@ -186,15 +331,17 @@ class NetworkVisualizer:
                 # Determine layer color
                 color = self.layer_colors.get(layer_type, 'rgba(100, 100, 100, 0.7)')
                 
-                # Calculate layer dimensions
-                layer_height = layer_size * 20  # Adjust based on neurons
+                # Determine shape type
+                shape_type = self.layer_shapes.get(layer_type, 'rect')
                 
-                # Calculate position
-                x_pos = i * layer_spacing
+                # Calculate layer dimensions and position
+                layer_height = max(100, min(layer_size * layer_height_unit, 500))  # Constrain height
+                x_pos = layer['index'] * layer_spacing
                 
-                # For layers with many neurons, use a rectangle with annotations
+                # Draw the main layer shape
                 if layer_size > 10:
-                    # Draw rectangle for the layer
+                    # For large layers, draw a rectangle with summary and sample neurons
+                    # Main rectangle
                     fig.add_shape(
                         type="rect",
                         x0=x_pos - layer_width/2,
@@ -205,7 +352,7 @@ class NetworkVisualizer:
                         line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
                     )
                     
-                    # Add text for layer name and size
+                    # Layer name
                     fig.add_annotation(
                         x=x_pos,
                         y=0,
@@ -214,52 +361,61 @@ class NetworkVisualizer:
                         font=dict(color="white", size=10)
                     )
                     
-                    # Add detailed info for hover
-                    hover_text = layer['details']
-                    if 'feature_names' in layer and layer['feature_names']:
-                        hover_text += f"<br>Features: {', '.join(layer['feature_names'][:5])}"
-                        if len(layer['feature_names']) > 5:
-                            hover_text += f" + {len(layer['feature_names'])-5} more"
+                    # Draw sample neurons (max 5) at edges to show size
+                    samples = min(5, layer_size)
+                    for j in range(samples):
+                        y_offset = (j - samples/2 + 0.5) * neuron_spacing
+                        # Small circle to represent a neuron
+                        fig.add_shape(
+                            type="circle",
+                            x0=x_pos - 10,
+                            y0=y_offset - 5,
+                            x1=x_pos + 10,
+                            y1=y_offset + 5,
+                            fillcolor="rgba(255, 255, 255, 0.7)",
+                            line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
+                        )
                     
-                    if 'label_names' in layer and layer['label_names']:
-                        hover_text += f"<br>Classes: {', '.join(layer['label_names'][:5])}"
-                        if len(layer['label_names']) > 5:
-                            hover_text += f" + {len(layer['label_names'])-5} more"
-                    
-                    if 'weight_shape' in layer:
-                        hover_text += f"<br>Weights: {layer['weight_shape']}"
-                    
-                    # Add invisible scatter point for hover information
-                    fig.add_trace(go.Scatter(
-                        x=[x_pos],
-                        y=[0],
-                        mode="markers",
-                        marker=dict(
-                            size=layer_width,
-                            color="rgba(0, 0, 0, 0)",
-                            line=dict(width=0)
-                        ),
-                        text=hover_text,
-                        hoverinfo="text",
-                        showlegend=False
-                    ))
+                    # Add "..." to show there are more neurons
+                    if layer_size > samples:
+                        fig.add_annotation(
+                            x=x_pos,
+                            y=(samples/2 + 0.5) * neuron_spacing + 20,
+                            text="...",
+                            showarrow=False,
+                            font=dict(size=16)
+                        )
+                
                 else:
                     # For smaller layers, show individual neurons
                     for j in range(layer_size):
                         y_pos = (j - layer_size/2 + 0.5) * neuron_spacing
                         
-                        # Draw the neuron
-                        fig.add_shape(
-                            type="rect" if layer_type in ["fc", "input", "output"] else "circle",
-                            x0=x_pos - layer_width/4,
-                            y0=y_pos - 10,
-                            x1=x_pos + layer_width/4,
-                            y1=y_pos + 10,
-                            fillcolor=color,
-                            line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
-                        )
+                        # Draw each neuron
+                        if shape_type == "circle":
+                            # For activation functions
+                            fig.add_shape(
+                                type="circle",
+                                x0=x_pos - layer_width/4,
+                                y0=y_pos - 15,
+                                x1=x_pos + layer_width/4,
+                                y1=y_pos + 15,
+                                fillcolor=color,
+                                line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
+                            )
+                        else:
+                            # For other layer types
+                            fig.add_shape(
+                                type="rect",
+                                x0=x_pos - layer_width/2,
+                                y0=y_pos - 15,
+                                x1=x_pos + layer_width/2,
+                                y1=y_pos + 15,
+                                fillcolor=color,
+                                line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
+                            )
                         
-                        # Add name annotation for special neurons
+                        # Add label for input/output neurons
                         if layer_type == "input" and j < len(self.feature_names):
                             fig.add_annotation(
                                 x=x_pos,
@@ -276,27 +432,69 @@ class NetworkVisualizer:
                                 showarrow=False,
                                 font=dict(color="white", size=8)
                             )
-                        
-                        # Add hover information
-                        hover_text = layer['details']
-                        if layer_type == "input" and j < len(self.feature_names):
-                            hover_text = f"Feature: {self.feature_names[j]}"
-                        elif layer_type == "output" and j < len(self.label_names):
-                            hover_text = f"Class: {self.label_names[j]}"
-                        
-                        fig.add_trace(go.Scatter(
-                            x=[x_pos],
-                            y=[y_pos],
-                            mode="markers",
-                            marker=dict(
-                                size=20,
-                                color="rgba(0, 0, 0, 0)",
-                                line=dict(width=0)
-                            ),
-                            text=hover_text,
-                            hoverinfo="text",
-                            showlegend=False
-                        ))
+                
+                # Add detailed hover information
+                hover_text = layer['details']
+                if layer_type == 'fc' and 'layer_key' in layer and layer['layer_key'] in layer_weights:
+                    weight_data = layer_weights[layer['layer_key']]
+                    weights = weight_data['weight']
+                    biases = weight_data['bias']
+                    
+                    avg_weight = np.mean(np.abs(weights))
+                    max_weight = np.max(np.abs(weights))
+                    avg_bias = np.mean(np.abs(biases)) if biases is not None else 0
+                    
+                    hover_text += f"<br>Avg Weight: {avg_weight:.4f}"
+                    hover_text += f"<br>Max Weight: {max_weight:.4f}"
+                    hover_text += f"<br>Avg Bias: {avg_bias:.4f}"
+                    hover_text += f"<br>Shape: {weights.shape}"
+                    
+                    # Add info on weight distribution
+                    pos_weights = np.sum(weights > 0)
+                    neg_weights = np.sum(weights < 0)
+                    hover_text += f"<br>Positive weights: {pos_weights}"
+                    hover_text += f"<br>Negative weights: {neg_weights}"
+                
+                if 'feature_names' in layer and isinstance(layer['feature_names'], (list, tuple, np.ndarray)) and len(layer['feature_names']) > 0:
+                    hover_text += f"<br>Features: {', '.join(layer['feature_names'][:5])}"
+                    if len(layer['feature_names']) > 5:
+                        hover_text += f" + {len(layer['feature_names'])-5} more"
+                
+                if 'label_names' in layer and isinstance(layer['label_names'], (list, tuple, np.ndarray)) and len(layer['label_names']) > 0:
+                    hover_text += f"<br>Classes: {', '.join(layer['label_names'][:5])}"
+                    if len(layer['label_names']) > 5:
+                        hover_text += f" + {len(layer['label_names'])-5} more"
+                
+                # Add invisible scatter point for hover
+                fig.add_trace(go.Scatter(
+                    x=[x_pos],
+                    y=[0],
+                    mode="markers",
+                    marker=dict(
+                        size=layer_height,
+                        color="rgba(0, 0, 0, 0)",
+                        line=dict(width=0)
+                    ),
+                    text=hover_text,
+                    hoverinfo="text",
+                    showlegend=False
+                ))
+                
+                # Add dotted connection to show data flow for activation and dropout layers
+                if layer_type in ['activation', 'dropout'] and i > 0:
+                    prev_x = all_layers[i-1]['index'] * layer_spacing
+                    fig.add_shape(
+                        type="line",
+                        x0=prev_x + layer_width/2,
+                        y0=0,
+                        x1=x_pos - layer_width/2,
+                        y1=0,
+                        line=dict(
+                            color="rgba(100, 100, 100, 0.5)",
+                            width=1,
+                            dash="dot"
+                        )
+                    )
             
             # Add legend for layer types
             legend_items = {
@@ -316,7 +514,7 @@ class NetworkVisualizer:
             for layer_type, layer_name in legend_items.items():
                 if layer_type in used_layer_types:
                     fig.add_shape(
-                        type="rect",
+                        type=self.layer_shapes.get(layer_type, 'rect'),
                         x0=legend_x,
                         y0=legend_y - 0.03,
                         x1=legend_x + 0.02,
@@ -351,8 +549,8 @@ class NetworkVisualizer:
                     'xanchor': 'center',
                     'yanchor': 'top'
                 },
-                width=900,
-                height=500,
+                width=1000,
+                height=600,
                 plot_bgcolor='rgba(240, 240, 240, 0.8)',
                 showlegend=False,
                 xaxis=dict(
@@ -367,7 +565,7 @@ class NetworkVisualizer:
                     scaleanchor="x",
                     scaleratio=1
                 ),
-                margin=dict(t=100, b=20, l=20, r=20),
+                margin=dict(t=120, b=20, l=20, r=20),
                 hovermode="closest"
             )
             
@@ -380,6 +578,18 @@ class NetworkVisualizer:
                 text=f"Input: {input_size} | Hidden: {hidden_sizes} | Output: {output_size} | Activation: {activation_fn} | Dropout: {dropout_rate}",
                 showarrow=False,
                 font=dict(size=12),
+                align="center"
+            )
+            
+            # Add parameter count annotation
+            fig.add_annotation(
+                x=0.5,
+                y=1.1,
+                xref="paper",
+                yref="paper",
+                text=f"Total Parameters: {hyperparams['Total Parameters']} | Trainable: {hyperparams['Trainable Parameters']}",
+                showarrow=False,
+                font=dict(size=10),
                 align="center"
             )
             
