@@ -3,13 +3,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import DataLoader
 import plotly.graph_objects as go
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 
 # Import our modules
-from modules.data_loader import DataProcessor
+from modules.data_loader import get_dataset
 from modules.model_builder import create_model
 from modules.trainer import Trainer
 from modules.visualizer import NetworkVisualizer
@@ -33,6 +32,12 @@ dataset_name = st.sidebar.selectbox(
     ["Iris", "Titanic"]
 )
 
+# Model type selection
+model_type = st.sidebar.selectbox(
+    "Select Model Type",
+    ["MLP"]
+)
+
 # Model parameters
 st.sidebar.subheader("Model Architecture")
 if dataset_name == "Iris":
@@ -43,6 +48,8 @@ else:
 hidden_layer_1 = st.sidebar.slider("Neurons in Hidden Layer 1", 2, 32, default_hidden_sizes[0])
 hidden_layer_2 = st.sidebar.slider("Neurons in Hidden Layer 2", 2, 32, default_hidden_sizes[1])
 hidden_sizes = [hidden_layer_1, hidden_layer_2]
+
+dropout_rate = st.sidebar.slider("Dropout Rate", 0.0, 0.5, 0.0, 0.1)
 
 # Training parameters
 st.sidebar.subheader("Training Parameters")
@@ -75,31 +82,16 @@ if 'sample_label' not in st.session_state:
 # Function to load data and train model
 def load_and_train():
     # Load and preprocess dataset
-    data_processor = DataProcessor()
-    
-    if dataset_name == "Iris":
-        data_info = data_processor.load_iris()
-    else:  # Titanic
-        data_info = data_processor.load_titanic()
-    
-    train_dataset = data_info["train_dataset"]
-    test_dataset = data_info["test_dataset"]
-    feature_names = data_info["feature_names"]
-    label_names = data_info["label_names"]
-    n_features = data_info["n_features"]
-    n_classes = data_info["n_classes"]
-    original_X = data_info["original_X"]
-    original_y = data_info["original_y"]
-    
-    train_loader, test_loader = data_processor.get_dataloaders(
-        train_dataset, test_dataset, batch_size=batch_size
-    )
+    dataset = get_dataset(dataset_name, batch_size=batch_size)
+    data_info = dataset.load_data()
     
     # Create model
     model = create_model(
-        input_size=n_features,
+        model_type=model_type,
+        input_size=data_info["n_features"],
         hidden_sizes=hidden_sizes,
-        output_size=n_classes
+        output_size=data_info["n_classes"],
+        dropout_rate=dropout_rate
     )
     
     # Create trainer
@@ -107,17 +99,25 @@ def load_and_train():
     
     # Train model
     with st.spinner("Training model..."):
-        training_history = trainer.train(train_loader, test_loader, epochs=epochs, verbose=False)
+        training_history = trainer.train(
+            data_info["train_loader"], 
+            data_info["test_loader"], 
+            epochs=epochs, 
+            verbose=False
+        )
     
     # Evaluate model
-    performance_metrics = trainer.get_performance_metrics(test_loader, label_names)
+    performance_metrics = trainer.get_performance_metrics(
+        data_info["test_loader"], 
+        data_info["label_names"]
+    )
     
     # Create visualizer
-    visualizer = NetworkVisualizer(model, feature_names, label_names)
+    visualizer = NetworkVisualizer(model, data_info["feature_names"], data_info["label_names"])
     
     # Sample a random datapoint for activation visualization
-    sample_idx = np.random.randint(0, len(test_dataset))
-    sample_datapoint, sample_label = test_dataset[sample_idx]
+    sample_idx = np.random.randint(0, len(data_info["test_dataset"]))
+    sample_datapoint, sample_label = data_info["test_dataset"][sample_idx]
     
     # Store in session state
     st.session_state.model = model
@@ -147,7 +147,9 @@ if st.sidebar.button("Train Model"):
 
 # Tabs for different visualizations
 if st.session_state.model is not None:
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # Add a new tab for model information
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "Model Information",
         "Network Architecture", 
         "Training History", 
         "Feature Importance", 
@@ -155,32 +157,66 @@ if st.session_state.model is not None:
         "Activation Visualization"
     ])
     
-    # Tab 1: Network Architecture
+    # Tab 1: Model Information
     with tab1:
-        st.header("Neural Network Architecture")
-        st.markdown("""
-        This visualization shows the architecture of the neural network. 
-        - Input nodes (blue) represent the features of the dataset
-        - Hidden nodes (green) represent the neurons in the hidden layers
-        - Output nodes (red) represent the classes
+        st.header("Model Information")
         
-        The connections between nodes represent the weights, with color indicating positive (blue) or negative (red) weights,
-        and opacity indicating the magnitude of the weight.
+        # Display dataset information
+        st.subheader("Dataset Information")
+        dataset = get_dataset(dataset_name)
+        st.markdown(dataset.get_description())
+        
+        st.markdown(f"""
+        **Dataset Statistics:**
+        - Number of features: {st.session_state.data_info['n_features']}
+        - Number of classes: {st.session_state.data_info['n_classes']}
+        - Feature names: {', '.join(st.session_state.data_info['feature_names'])}
+        - Class names: {', '.join(st.session_state.data_info['label_names'])}
         """)
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.subheader("Static Visualization")
+        # Display model hyperparameters
+        st.subheader("Model Hyperparameters")
+        hyperparams = st.session_state.model.get_hyperparameters()
+        
+        # Convert hyperparameters to DataFrame for display
+        hyperparams_df = pd.DataFrame({
+            'Parameter': hyperparams.keys(),
+            'Value': hyperparams.values()
+        })
+        
+        st.dataframe(hyperparams_df)
+        
+        # Display model description
+        st.subheader("Model Description")
+        st.markdown(st.session_state.model.get_description())
+    
+    # Tab 2: Network Architecture
+    with tab2:
+        st.header("Neural Network Architecture")
+        st.markdown("""
+        This visualization shows the architecture of the neural network:
+        - **Blue blocks**: Input layer nodes representing dataset features
+        - **Green blocks**: Fully connected (dense) layers
+        - **Purple blocks**: Activation functions
+        - **Gray blocks**: Dropout layers (if used)
+        - **Red blocks**: Output layer representing classes
+        
+        **Hover over** any component to see more details about that layer including input/output dimensions.
+        """)
+        
+        # Display the interactive visualization
+        st.subheader("Interactive Architecture Diagram")
+        fig = st.session_state.visualizer.plot_network_interactive()
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Keep the static visualization as an option
+        if st.checkbox("Show Traditional Network Diagram"):
+            st.subheader("Traditional Network Diagram")
             fig = st.session_state.visualizer.plot_network_architecture()
             st.pyplot(fig)
-            
-        with col2:
-            st.subheader("Interactive Visualization")
-            fig = st.session_state.visualizer.plot_network_interactive()
-            st.plotly_chart(fig, use_container_width=True)
     
-    # Tab 2: Training History
-    with tab2:
+    # Tab 3: Training History
+    with tab3:
         st.header("Training History")
         st.markdown("""
         These plots show the model's performance during training.
@@ -252,8 +288,8 @@ if st.session_state.model is not None:
             st.subheader("Classification Report")
             st.text(metrics['classification_report'])
     
-    # Tab 3: Feature Importance
-    with tab3:
+    # Tab 4: Feature Importance
+    with tab4:
         st.header("Feature Importance")
         st.markdown("""
         This visualization shows the importance of each input feature based on the weights in the first layer of the network.
@@ -263,8 +299,8 @@ if st.session_state.model is not None:
         fig = st.session_state.visualizer.visualize_feature_importance()
         st.pyplot(fig)
     
-    # Tab 4: Data Projections
-    with tab4:
+    # Tab 5: Data Projections
+    with tab5:
         st.header("Data Projections")
         st.markdown("""
         These visualizations show how the data is transformed as it passes through the network.
@@ -340,8 +376,8 @@ if st.session_state.model is not None:
         
         st.pyplot(fig)
     
-    # Tab 5: Activation Visualization
-    with tab5:
+    # Tab 6: Activation Visualization
+    with tab6:
         st.header("Neuron Activations")
         st.markdown("""
         This visualization shows the activation values of each neuron in the network for a specific input example.
