@@ -251,6 +251,83 @@ if st.session_state.model is not None:
             st.subheader("Traditional Network Diagram")
             fig = st.session_state.visualizer.plot_network_architecture()
             st.pyplot(fig)
+        
+        # Add sample input tracing
+        st.subheader("Sample Input Tracing")
+        st.markdown("""
+        This visualization shows how a sample input propagates through the network. Select a sample to see how the model
+        processes it to make a prediction. Node colors show activation strength, and edge colors/thickness show weight importance.
+        """)
+        
+        # Sample selection
+        if st.button("Select Random Sample"):
+            data_info = st.session_state.data_info
+            test_dataset = data_info["test_dataset"]
+            sample_idx = np.random.randint(0, len(test_dataset))
+            st.session_state.sample_datapoint, st.session_state.sample_label = test_dataset[sample_idx]
+        
+        # Display the sample details
+        if hasattr(st.session_state, 'sample_datapoint') and st.session_state.sample_datapoint is not None:
+            sample_datapoint = st.session_state.sample_datapoint
+            sample_label = st.session_state.sample_label
+            
+            # Create two columns
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                # Display sample features
+                st.subheader("Sample Features")
+                
+                # Feature names and values - ensure all values are properly converted to Python native types
+                feature_names = st.session_state.data_info['feature_names']
+                
+                # Safely convert tensor values to native Python float values
+                if torch.is_tensor(sample_datapoint):
+                    feature_values = [float(val.item()) for val in sample_datapoint]
+                else:
+                    feature_values = [float(val) for val in sample_datapoint]
+                    
+                sample_df = pd.DataFrame({
+                    'Feature': feature_names,
+                    'Value': feature_values
+                })
+                
+                # Display the features table
+                st.dataframe(sample_df)
+                
+                # Show true label
+                true_class = st.session_state.data_info['label_names'][sample_label.item()]
+                st.markdown(f"**True Class**: {true_class}")
+                
+                # Make prediction
+                with torch.no_grad():
+                    output = st.session_state.model(sample_datapoint.unsqueeze(0))
+                    probs = torch.softmax(output, dim=1)[0]
+                    prediction = torch.argmax(probs).item()
+                    predicted_class = st.session_state.data_info['label_names'][prediction]
+                
+                # Show prediction
+                st.markdown(f"**Predicted Class**: {predicted_class} " + 
+                           ("✓" if prediction == sample_label.item() else "✗"))
+                
+                # Show top probabilities
+                prob_df = pd.DataFrame({
+                    'Class': st.session_state.data_info['label_names'],
+                    'Probability': probs.numpy()
+                }).sort_values('Probability', ascending=False)
+                
+                st.dataframe(prob_df)
+            
+            with col2:
+                # Display network with activations
+                st.subheader("Activation Path")
+                fig = st.session_state.visualizer.plot_detailed_network(
+                    sample_input=sample_datapoint,
+                    sample_label=sample_label
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Select a sample to see how it propagates through the network.")
     
     # Tab 3: Training History
     with tab3:

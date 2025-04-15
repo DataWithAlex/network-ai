@@ -10,6 +10,7 @@ import torch
 import plotly.express as px
 from plotly.subplots import make_subplots
 import math
+import colorsys
 
 class NetworkVisualizer:
     def __init__(self, model, feature_names, label_names):
@@ -22,26 +23,278 @@ class NetworkVisualizer:
             'input': 'rgba(65, 105, 225, 0.7)',  # Royal blue
             'hidden': 'rgba(50, 205, 50, 0.7)',  # Lime green
             'output': 'rgba(220, 20, 60, 0.7)',  # Crimson
-            'conv': 'rgba(65, 105, 225, 0.7)',   # Blue
-            'pool': 'rgba(255, 165, 0, 0.7)',    # Orange
             'activation': 'rgba(147, 112, 219, 0.6)',  # Medium purple
             'dropout': 'rgba(169, 169, 169, 0.6)',  # Dark gray
             'batch_norm': 'rgba(255, 215, 0, 0.6)',  # Gold
-            'fc': 'rgba(60, 179, 113, 0.7)'      # Medium sea green
+            'fc': 'rgba(50, 205, 50, 0.7)',  # Same as hidden for fully connected layers
         }
         
-        # Define shapes for different layer types
+        # Define shapes for different layer types (using valid Plotly shape types)
         self.layer_shapes = {
             'input': 'rect',
             'hidden': 'rect',
             'output': 'rect',
-            'conv': 'rect',
-            'pool': 'rect',
             'activation': 'circle',
             'dropout': 'rect',
             'batch_norm': 'rect',
-            'fc': 'rect'
+            'fc': 'rect',  # Same as hidden for fully connected layers
         }
+        
+        # Weight color scales
+        self.weight_pos_color = 'rgba(0, 128, 0, 0.7)'  # Green for positive weights
+        self.weight_neg_color = 'rgba(255, 0, 0, 0.7)'  # Red for negative weights
+        
+    def plot_detailed_network(self, sample_input=None, sample_label=None):
+        """Create a detailed visualization showing how a sample propagates through the network"""
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Get model structure and weights
+        hyperparams = self.model.get_hyperparameters()
+        layer_weights = self.model.get_layer_weights()
+        
+        # Get activations if sample input is provided
+        activations = {}
+        sample_output = None
+        if sample_input is not None:
+            # Ensure sample input is a tensor and add batch dimension if needed
+            if not torch.is_tensor(sample_input):
+                sample_input = torch.tensor(sample_input, dtype=torch.float32)
+            if len(sample_input.shape) == 1:
+                sample_input_batch = sample_input.unsqueeze(0)
+            else:
+                sample_input_batch = sample_input
+            
+            # Get activations and prediction
+            with torch.no_grad():
+                activations = self.model.get_intermediate_features(sample_input_batch)
+                sample_output = self.model(sample_input_batch)
+                predicted_class = torch.argmax(sample_output, dim=1).item()
+        
+        # Extract network structure
+        if "MLP" in hyperparams["Model Type"]:
+            input_size = hyperparams["Input Size"]
+            hidden_sizes = hyperparams["Hidden Layers"]
+            output_size = hyperparams["Output Size"]
+            
+            # Calculate network dimensions
+            all_layer_sizes = [input_size] + hidden_sizes + [output_size]
+            max_layer_size = max(all_layer_sizes)
+            layer_spacing = 3.5  # Horizontal spacing between layers
+            
+            # Create a NetworkX graph for visualization
+            G = nx.DiGraph()
+            
+            # Add nodes for each neuron
+            node_positions = {}
+            neuron_colors = {}
+            layer_x = 0
+            
+            # Add input layer
+            for i in range(input_size):
+                node_id = f"input_{i}"
+                G.add_node(node_id)
+                # Center the layer vertically
+                vertical_position = (max_layer_size - input_size) / 2 + i
+                node_positions[node_id] = (layer_x, vertical_position)
+                
+                # Color based on input value if provided
+                if sample_input is not None:
+                    # Handle both tensor and numpy inputs safely
+                    if torch.is_tensor(sample_input):
+                        input_val = sample_input[i].item() if i < len(sample_input) else 0
+                    else:
+                        input_val = sample_input[i] if i < len(sample_input) else 0
+                    
+                    # Normalize input for coloring
+                    intensity = min(1.0, max(0.2, abs(float(input_val)) / 5))  # Clamp between 0.2 and 1.0
+                    neuron_colors[node_id] = (0.4, 0.4, 0.8, intensity)
+                else:
+                    neuron_colors[node_id] = (0.4, 0.4, 0.8, 0.3)  # Default input color
+            
+            # Add hidden layers
+            prev_layer_ids = [f"input_{i}" for i in range(input_size)]
+            layer_ids = []
+            
+            for l, size in enumerate(hidden_sizes):
+                layer_x += layer_spacing
+                layer_ids = []
+                
+                for i in range(size):
+                    node_id = f"hidden_{l}_{i}"
+                    G.add_node(node_id)
+                    layer_ids.append(node_id)
+                    
+                    # Center the layer vertically
+                    vertical_position = (max_layer_size - size) / 2 + i
+                    node_positions[node_id] = (layer_x, vertical_position)
+                    
+                    # Color based on activation value if provided
+                    if activations and f"linear_{l}" in activations:
+                        # Get activation value as scalar
+                        act_val = activations[f"linear_{l}"][0, i].item() if i < activations[f"linear_{l}"].shape[1] else 0
+                        intensity = min(1.0, max(0.2, abs(float(act_val)) / 5))  # Clamp between 0.2 and 1.0
+                        neuron_colors[node_id] = (0.2, 0.7, 0.2, intensity)
+                    else:
+                        neuron_colors[node_id] = (0.2, 0.7, 0.2, 0.3)  # Default hidden color
+                    
+                    # Connect to previous layer with weighted edges
+                    for j, prev_id in enumerate(prev_layer_ids):
+                        if l == 0:
+                            # Input to first hidden layer
+                            if "linear_0" in layer_weights:
+                                weight = layer_weights["linear_0"]["weight"][i, j].item()
+                            else:
+                                weight = 0
+                        else:
+                            # Hidden to hidden layer
+                            if f"linear_{l}" in layer_weights:
+                                weight = layer_weights[f"linear_{l}"]["weight"][i, j].item() if j < layer_weights[f"linear_{l}"]["weight"].shape[1] else 0
+                            else:
+                                weight = 0
+                        
+                        # Add edge with weight
+                        G.add_edge(prev_id, node_id, weight=weight)
+                
+                prev_layer_ids = layer_ids
+            
+            # Add output layer
+            layer_x += layer_spacing
+            output_ids = []
+            
+            for i in range(output_size):
+                node_id = f"output_{i}"
+                G.add_node(node_id)
+                output_ids.append(node_id)
+                
+                # Center the layer vertically
+                vertical_position = (max_layer_size - output_size) / 2 + i
+                node_positions[node_id] = (layer_x, vertical_position)
+                
+                # Color based on output probability if available
+                if sample_output is not None:
+                    prob = torch.softmax(sample_output, dim=1)[0, i].item()
+                    intensity = min(1.0, max(0.2, float(prob)))  # Scale based on probability
+                    
+                    # Highlight predicted class
+                    if i == predicted_class:
+                        # Bright red for predicted class
+                        neuron_colors[node_id] = (0.9, 0.2, 0.2, intensity)
+                    else:
+                        # Normal output color with probability-based intensity
+                        neuron_colors[node_id] = (0.8, 0.3, 0.3, intensity)
+                else:
+                    neuron_colors[node_id] = (0.8, 0.3, 0.3, 0.3)  # Default output color
+                
+                # Connect to previous layer with weighted edges
+                for j, prev_id in enumerate(prev_layer_ids):
+                    if "linear_output" in layer_weights:
+                        weight = layer_weights["linear_output"]["weight"][i, j].item() if j < layer_weights["linear_output"]["weight"].shape[1] else 0
+                    else:
+                        weight = 0
+                    
+                    # Add edge with weight
+                    G.add_edge(prev_id, node_id, weight=weight)
+            
+            # Draw the network
+            # Node sizes vary by layer type
+            node_sizes = {}
+            for node in G.nodes():
+                if "input" in node:
+                    node_sizes[node] = 300
+                elif "hidden" in node:
+                    node_sizes[node] = 300
+                else:  # output
+                    node_sizes[node] = 300
+            
+            # Edge colors based on weight polarity and magnitude
+            edge_colors = []
+            edge_widths = []
+            
+            for u, v, data in G.edges(data=True):
+                weight = data.get('weight', 0)
+                # Normalize weight for visualization
+                width = 1 + 2 * min(1, abs(weight))
+                
+                if weight > 0:
+                    edge_colors.append((0, 0.5, 0, min(0.8, 0.2 + abs(weight) * 0.6)))  # Green for positive
+                else:
+                    edge_colors.append((0.8, 0, 0, min(0.8, 0.2 + abs(weight) * 0.6)))  # Red for negative
+                
+                edge_widths.append(width)
+            
+            # Draw nodes
+            nx.draw_networkx_nodes(
+                G, 
+                pos=node_positions, 
+                node_color=[neuron_colors[node] for node in G.nodes()],
+                node_size=[node_sizes[node] for node in G.nodes()],
+                ax=ax
+            )
+            
+            # Draw edges
+            nx.draw_networkx_edges(
+                G, 
+                pos=node_positions, 
+                edge_color=edge_colors,
+                width=edge_widths,
+                alpha=0.6,
+                ax=ax,
+                arrows=True,
+                arrowsize=10,
+                arrowstyle='->'
+            )
+            
+            # Add labels
+            # Input layer
+            for i in range(input_size):
+                node_id = f"input_{i}"
+                x, y = node_positions[node_id]
+                label = self.feature_names[i] if i < len(self.feature_names) else f"Feature {i}"
+                ax.text(x - 0.5, y, label, ha='right', va='center', fontsize=8)
+                
+                # Add input value if provided
+                if sample_input is not None:
+                    if torch.is_tensor(sample_input):
+                        val = sample_input[i].item() if i < len(sample_input) else 0
+                    else:
+                        val = sample_input[i] if i < len(sample_input) else 0
+                    ax.text(x + 0.05, y - 0.2, f"{val:.2f}", ha='center', va='center', fontsize=7, color='blue')
+            
+            # Output layer
+            for i in range(output_size):
+                node_id = f"output_{i}"
+                x, y = node_positions[node_id]
+                label = self.label_names[i] if i < len(self.label_names) else f"Class {i}"
+                ax.text(x + 0.5, y, label, ha='left', va='center', fontsize=8)
+                
+                # Add probability if prediction is available
+                if sample_output is not None:
+                    prob = torch.softmax(sample_output, dim=1)[0, i].item()
+                    color = 'red' if i == predicted_class else 'blue'
+                    ax.text(x + 0.05, y - 0.2, f"{prob:.2f}", ha='center', va='center', fontsize=7, color=color)
+            
+            # Draw layer titles
+            ax.text(0, max_layer_size + 0.5, "Input Layer", ha='center', va='center', fontsize=10, fontweight='bold')
+            
+            for l, size in enumerate(hidden_sizes):
+                layer_x = (l + 1) * layer_spacing
+                ax.text(layer_x, max_layer_size + 0.5, f"Hidden Layer {l+1}", ha='center', va='center', fontsize=10, fontweight='bold')
+            
+            ax.text((len(hidden_sizes) + 1) * layer_spacing, max_layer_size + 0.5, "Output Layer", ha='center', va='center', fontsize=10, fontweight='bold')
+            
+            # Title and layout
+            if sample_input is not None and sample_label is not None:
+                true_class = self.label_names[sample_label.item()] if torch.is_tensor(sample_label) else self.label_names[sample_label]
+                pred_class = self.label_names[predicted_class] if 'predicted_class' in locals() else "N/A"
+                ax.set_title(f"Neural Network Activation - True: {true_class}, Predicted: {pred_class}")
+            else:
+                ax.set_title("Neural Network Architecture")
+            
+            ax.set_xlim(-1, (len(hidden_sizes) + 1) * layer_spacing + 1)
+            ax.set_ylim(-1, max_layer_size + 1)
+            ax.axis('off')
+            
+        return fig
 
     def plot_network_architecture(self):
         """Create a static network visualization using matplotlib"""
@@ -519,7 +772,7 @@ class NetworkVisualizer:
                         y0=legend_y - 0.03,
                         x1=legend_x + 0.02,
                         y1=legend_y,
-                        fillcolor=self.layer_colors[layer_type],
+                        fillcolor=self.layer_colors.get(layer_type, self.layer_colors['hidden']),
                         line=dict(color="rgba(50, 50, 50, 0.8)", width=1),
                         xref="paper",
                         yref="paper"
