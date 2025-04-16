@@ -12,6 +12,7 @@ from modules.data_loader import get_dataset
 from modules.model_builder import create_model
 from modules.trainer import Trainer
 from modules.visualizer import NetworkVisualizer
+from modules.activation_tracer import ActivationTracer
 
 # Set page configuration
 st.set_page_config(page_title="Neural Network Visualizer", page_icon="🧠", layout="wide")
@@ -70,6 +71,8 @@ if 'data_info' not in st.session_state:
     st.session_state.data_info = None
 if 'visualizer' not in st.session_state:
     st.session_state.visualizer = None
+if 'activation_tracer' not in st.session_state:
+    st.session_state.activation_tracer = None
 if 'training_history' not in st.session_state:
     st.session_state.training_history = None
 if 'performance_metrics' not in st.session_state:
@@ -115,6 +118,9 @@ def load_and_train():
     # Create visualizer
     visualizer = NetworkVisualizer(model, data_info["feature_names"], data_info["label_names"])
     
+    # Create activation tracer
+    activation_tracer = ActivationTracer(model, data_info["feature_names"], data_info["label_names"])
+    
     # Sample a random datapoint for activation visualization
     sample_idx = np.random.randint(0, len(data_info["test_dataset"]))
     sample_datapoint, sample_label = data_info["test_dataset"][sample_idx]
@@ -124,6 +130,7 @@ def load_and_train():
     st.session_state.trainer = trainer
     st.session_state.data_info = data_info
     st.session_state.visualizer = visualizer
+    st.session_state.activation_tracer = activation_tracer
     st.session_state.training_history = training_history
     st.session_state.performance_metrics = performance_metrics
     st.session_state.sample_datapoint = sample_datapoint
@@ -134,6 +141,7 @@ def load_and_train():
         'trainer': trainer,
         'data_info': data_info,
         'visualizer': visualizer,
+        'activation_tracer': activation_tracer,
         'training_history': training_history,
         'performance_metrics': performance_metrics,
         'sample_datapoint': sample_datapoint,
@@ -194,7 +202,8 @@ if st.session_state.model is not None:
     with tab2:
         st.header("Neural Network Architecture")
         st.markdown("""
-        This interactive visualization shows the complete architecture of the neural network:
+        This interactive visualization shows the complete architecture of the neural network. 
+        **Hover your mouse over any component** to see detailed information.
         
         ### Layer Types:
         - **Blue blocks**: Input layer nodes representing dataset features
@@ -203,20 +212,25 @@ if st.session_state.model is not None:
         - **Gray blocks**: Dropout layers (regularization technique)
         - **Red blocks**: Output layer representing classes
         
-        ### Visualization Features:
-        - **Hover over any component** to see detailed statistics including weight distributions
-        - **Connections between layers** show data flow and transformation
-        - **Dotted lines** provide explanatory annotations
-        - **Connection color** indicates weight polarity (green=positive, red=negative)
-        - **Connection thickness** indicates weight magnitude
-        
-        This visualization helps understand how data flows through the network and how each layer transforms the data.
+        ### How to Use:
+        1. **Hover** over any node to see its details and activation values
+        2. **Observe the connections** between layers to understand data flow
+        3. **Note the color and thickness** of connections to see weight importance
         """)
         
         # Display the interactive visualization
         st.subheader("Interactive Architecture Diagram")
-        fig = st.session_state.visualizer.plot_network_interactive()
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("""
+        Hover over nodes to see details about each layer. 
+        The colors indicate different layer types as shown in the legend.
+        """)
+        
+        # Get and display the network visualization
+        try:
+            network_fig = st.session_state.visualizer.plot_network_interactive()
+            st.plotly_chart(network_fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error generating visualization: {str(e)}")
         
         # Model parameter details
         st.subheader("Model Parameter Details")
@@ -271,14 +285,14 @@ if st.session_state.model is not None:
             sample_datapoint = st.session_state.sample_datapoint
             sample_label = st.session_state.sample_label
             
-            # Create two columns
-            col1, col2 = st.columns([1, 2])
+            # Create 2 columns for the sample features and prediction
+            col1, col2 = st.columns(2)
             
             with col1:
                 # Display sample features
                 st.subheader("Sample Features")
                 
-                # Feature names and values - ensure all values are properly converted to Python native types
+                # Feature names and values
                 feature_names = st.session_state.data_info['feature_names']
                 
                 # Safely convert tensor values to native Python float values
@@ -291,11 +305,13 @@ if st.session_state.model is not None:
                     'Feature': feature_names,
                     'Value': feature_values
                 })
-                
-                # Display the features table
                 st.dataframe(sample_df)
+            
+            with col2:
+                # Show true and predicted class
+                st.subheader("Classification Results")
                 
-                # Show true label
+                # Get true label
                 true_class = st.session_state.data_info['label_names'][sample_label.item()]
                 st.markdown(f"**True Class**: {true_class}")
                 
@@ -306,11 +322,11 @@ if st.session_state.model is not None:
                     prediction = torch.argmax(probs).item()
                     predicted_class = st.session_state.data_info['label_names'][prediction]
                 
-                # Show prediction
+                # Show prediction with check/x mark
                 st.markdown(f"**Predicted Class**: {predicted_class} " + 
                            ("✓" if prediction == sample_label.item() else "✗"))
                 
-                # Show top probabilities
+                # Show probabilities
                 prob_df = pd.DataFrame({
                     'Class': st.session_state.data_info['label_names'],
                     'Probability': probs.numpy()
@@ -318,14 +334,13 @@ if st.session_state.model is not None:
                 
                 st.dataframe(prob_df)
             
-            with col2:
-                # Display network with activations
-                st.subheader("Activation Path")
-                fig = st.session_state.visualizer.plot_detailed_network(
-                    sample_input=sample_datapoint,
-                    sample_label=sample_label
-                )
-                st.plotly_chart(fig, use_container_width=True)
+            # Display network with activations using full width
+            st.subheader("Activation Path")
+            fig = st.session_state.visualizer.plot_detailed_network(
+                sample_input=sample_datapoint,
+                sample_label=sample_label
+            )
+            st.pyplot(fig, use_container_width=True)
         else:
             st.info("Select a sample to see how it propagates through the network.")
     
@@ -404,91 +419,108 @@ if st.session_state.model is not None:
     
     # Tab 4: Feature Importance
     with tab4:
-        st.header("Feature Importance")
+        st.header("Feature Importance Analysis")
         st.markdown("""
-        This visualization shows the importance of each input feature based on the weights in the first layer of the network.
-        Larger absolute weight values indicate higher importance of that feature.
-        """)
+        This visualization shows how each input feature impacts the model's predictions:
         
-        fig = st.session_state.visualizer.visualize_feature_importance()
-        st.pyplot(fig)
+        - **Higher values** indicate features that have a stronger influence on the model's decisions
+        - The visualization uses the weights from the first layer of the neural network
+        - For more complex models, this is an approximation of feature importance
+        """)
+
+        # Get original data from session state
+        if hasattr(st.session_state, 'data_info') and 'original_X' in st.session_state.data_info:
+            original_X = st.session_state.data_info['original_X']
+            original_y = st.session_state.data_info['original_y']
+            
+            # Pass the data to the visualization method
+            fig = st.session_state.visualizer.visualize_feature_importance(X=original_X, y=original_y)
+            st.pyplot(fig)
+        else:
+            st.error("Original dataset information not available in session state")
     
     # Tab 5: Data Projections
     with tab5:
-        st.header("Data Projections")
+        st.header("Data Projections Visualization")
         st.markdown("""
-        These visualizations show how the data is transformed as it passes through the network.
-        - PCA (Principal Component Analysis) reduces the dimensionality of the data to 2 dimensions, preserving as much variance as possible.
-        - t-SNE (t-distributed Stochastic Neighbor Embedding) reduces the dimensionality while trying to preserve the local structure of the data.
+        These visualizations show how the neural network transforms the data through its layers:
         
-        Colors represent different classes.
+        - **PCA Projection** reduces the dimensionality to 2D while preserving variance
+        - **t-SNE Projection** preserves local neighborhood structure of the data
+        - Colors represent different classes in the dataset
         """)
         
-        # Get a batch of data for visualization
-        projection_data = st.session_state.data_info['original_X']
-        projection_labels = st.session_state.data_info['original_y']
+        # Create tabs for PCA and t-SNE
+        proj_tab1, proj_tab2 = st.tabs(["PCA Projection", "t-SNE Projection"])
         
-        # Get sample datapoint for layer activations
-        sample_tensor = st.session_state.sample_datapoint.unsqueeze(0)  # Add batch dimension
-        layer_outputs = st.session_state.model.get_intermediate_features(sample_tensor)
+        with proj_tab1:
+            # Get original data from session state
+            if hasattr(st.session_state, 'data_info') and 'original_X' in st.session_state.data_info:
+                original_X = st.session_state.data_info['original_X']
+                original_y = st.session_state.data_info['original_y']
+                
+                # Get intermediate features for all training examples (limit to 1000 for performance)
+                max_samples = min(1000, len(original_X))
+                subset_X = original_X[:max_samples]
+                subset_y = original_y[:max_samples]
+                
+                # Get intermediate features if available
+                with torch.no_grad():
+                    # Convert to tensor if needed
+                    if not torch.is_tensor(subset_X):
+                        subset_X_tensor = torch.tensor(subset_X, dtype=torch.float32)
+                    else:
+                        subset_X_tensor = subset_X
+                    
+                    # Get intermediate features for visualization
+                    intermediate_features = st.session_state.model.get_intermediate_features(subset_X_tensor)
+                
+                # Create PCA visualization
+                fig = st.session_state.visualizer.visualize_pca_projection(
+                    X=subset_X, 
+                    y=subset_y, 
+                    layer_outputs=intermediate_features
+                )
+                st.pyplot(fig)
+            else:
+                st.error("Original dataset information not available in session state")
         
-        # Sample a small subset if dataset is large
-        if len(projection_labels) > 500:
-            # Sample a balanced subset
-            indices = []
-            for label in np.unique(projection_labels):
-                label_indices = np.where(projection_labels == label)[0]
-                sampled_indices = np.random.choice(label_indices, size=min(100, len(label_indices)), replace=False)
-                indices.extend(sampled_indices)
-            
-            projection_data = projection_data[indices]
-            projection_labels = projection_labels[indices]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("PCA Projection")
-            fig = st.session_state.visualizer.visualize_pca_projection(
-                projection_data, projection_labels
-            )
-            st.pyplot(fig)
-            
-        with col2:
-            st.subheader("t-SNE Projection")
-            perplexity = st.slider("t-SNE Perplexity", 5, 50, 30)
-            fig = st.session_state.visualizer.visualize_tsne_projection(
-                projection_data, projection_labels, perplexity=perplexity
-            )
-            st.pyplot(fig)
-        
-        # Visualize layer projections
-        st.subheader("Layer-wise Data Projections")
-        st.markdown("""
-        These visualizations show how the data is transformed at each layer of the network.
-        """)
-        
-        # Get activations for a batch of data
-        with torch.no_grad():
-            batch_size = min(100, len(projection_data))
-            batch_data = torch.tensor(projection_data[:batch_size], dtype=torch.float32)
-            batch_labels = projection_labels[:batch_size]
-            layer_outputs_batch = st.session_state.model.get_intermediate_features(batch_data)
-        
-        projection_type = st.radio(
-            "Projection Method",
-            ["PCA", "t-SNE"]
-        )
-        
-        if projection_type == "PCA":
-            fig = st.session_state.visualizer.visualize_pca_projection(
-                batch_data.numpy(), batch_labels, layer_outputs_batch
-            )
-        else:  # t-SNE
-            fig = st.session_state.visualizer.visualize_tsne_projection(
-                batch_data.numpy(), batch_labels, layer_outputs_batch, perplexity=perplexity
-            )
-        
-        st.pyplot(fig)
+        with proj_tab2:
+            # Get original data from session state
+            if hasattr(st.session_state, 'data_info') and 'original_X' in st.session_state.data_info:
+                original_X = st.session_state.data_info['original_X']
+                original_y = st.session_state.data_info['original_y']
+                
+                # Get intermediate features for all training examples (limit to 500 for t-SNE which is slower)
+                max_samples = min(500, len(original_X))
+                subset_X = original_X[:max_samples]
+                subset_y = original_y[:max_samples]
+                
+                # Allow user to adjust perplexity
+                perplexity = st.slider("t-SNE Perplexity", min_value=5, max_value=50, value=30,
+                                      help="Perplexity is related to the number of nearest neighbors in t-SNE")
+                
+                # Get intermediate features if available
+                with torch.no_grad():
+                    # Convert to tensor if needed
+                    if not torch.is_tensor(subset_X):
+                        subset_X_tensor = torch.tensor(subset_X, dtype=torch.float32)
+                    else:
+                        subset_X_tensor = subset_X
+                    
+                    # Get intermediate features for visualization
+                    intermediate_features = st.session_state.model.get_intermediate_features(subset_X_tensor)
+                
+                # Create t-SNE visualization
+                fig = st.session_state.visualizer.visualize_tsne_projection(
+                    X=subset_X, 
+                    y=subset_y, 
+                    layer_outputs=intermediate_features,
+                    perplexity=perplexity
+                )
+                st.pyplot(fig)
+            else:
+                st.error("Original dataset information not available in session state")
     
     # Tab 6: Activation Visualization
     with tab6:
@@ -498,80 +530,97 @@ if st.session_state.model is not None:
         It helps understand how information flows through the network.
         """)
         
-        # Display sample information
-        sample_datapoint = st.session_state.sample_datapoint
-        sample_label = st.session_state.sample_label
-        label_name = st.session_state.data_info['label_names'][sample_label]
-        
-        st.subheader(f"Sample Data Point (Class: {label_name})")
-        
-        # Show feature values
-        feature_values = {}
-        for i, feature in enumerate(st.session_state.data_info['feature_names']):
-            if i < len(sample_datapoint):
-                feature_values[feature] = sample_datapoint[i].item()
-        
-        st.dataframe(pd.DataFrame([feature_values]))
-        
         # Generate new sample button
-        if st.button("Generate New Sample"):
+        if st.button("Generate New Sample", key="activation_new_sample"):
             data_info = st.session_state.data_info
             test_dataset = data_info["test_dataset"]
             sample_idx = np.random.randint(0, len(test_dataset))
             st.session_state.sample_datapoint, st.session_state.sample_label = test_dataset[sample_idx]
             st.experimental_rerun()
         
-        # Display activations
-        st.subheader("Neuron Activations")
-        fig = st.session_state.visualizer.visualize_activations(sample_datapoint)
-        st.pyplot(fig)
-        
-        # Get prediction
-        with torch.no_grad():
-            output = st.session_state.model(sample_datapoint.unsqueeze(0))
-            probabilities = torch.softmax(output, dim=1)[0]
-            prediction = torch.argmax(probabilities).item()
-            predicted_label = st.session_state.data_info['label_names'][prediction]
-        
-        # Show prediction and probabilities
-        st.subheader("Model Prediction")
-        
-        # Display prediction
-        correct = prediction == sample_label.item()
-        st.markdown(f"**Predicted Class**: {predicted_label} " + 
-                   ("✓" if correct else "✗"))
-        
-        # Display probabilities
-        prob_df = pd.DataFrame({
-            'Class': st.session_state.data_info['label_names'],
-            'Probability': probabilities.numpy()
-        })
-        
-        fig, ax = plt.subplots(figsize=(10, 5))
-        bars = ax.bar(prob_df['Class'], prob_df['Probability'], color='skyblue')
-        
-        # Highlight the correct class
-        bars[sample_label.item()].set_color('green')
-        
-        # Highlight the predicted class if different from correct
-        if prediction != sample_label.item():
-            bars[prediction].set_color('red')
+        # Sample info and prediction
+        if hasattr(st.session_state, 'sample_datapoint') and st.session_state.sample_datapoint is not None:
+            sample_datapoint = st.session_state.sample_datapoint
+            sample_label = st.session_state.sample_label
             
-        ax.set_ylim(0, 1)
-        ax.set_ylabel('Probability')
-        ax.set_title('Class Probabilities')
-        
-        # Add legend
-        import matplotlib.patches as mpatches
-        legend_elements = [
-            mpatches.Patch(color='green', label='True Class'),
-        ]
-        if prediction != sample_label.item():
-            legend_elements.append(mpatches.Patch(color='red', label='Predicted Class (Wrong)'))
+            # Create two columns for sample information
+            col1, col2 = st.columns(2)
             
-        ax.legend(handles=legend_elements)
-        
-        st.pyplot(fig)
+            with col1:
+                # Display sample features
+                st.subheader("Sample Features")
+                
+                # Feature names and values
+                feature_names = st.session_state.data_info['feature_names']
+                
+                # Safely convert tensor values to native Python float values
+                if torch.is_tensor(sample_datapoint):
+                    feature_values = [float(val.item()) for val in sample_datapoint]
+                else:
+                    feature_values = [float(val) for val in sample_datapoint]
+                    
+                # Create and display dataframe
+                sample_df = pd.DataFrame({
+                    'Feature': feature_names,
+                    'Value': feature_values
+                })
+                st.dataframe(sample_df)
+            
+            with col2:
+                # Show true and predicted class
+                st.subheader("Classification Results")
+                
+                # Get true label
+                true_class = st.session_state.data_info['label_names'][sample_label.item()]
+                st.markdown(f"**True Class**: {true_class}")
+                
+                # Make prediction
+                with torch.no_grad():
+                    output = st.session_state.model(sample_datapoint.unsqueeze(0))
+                    probs = torch.softmax(output, dim=1)[0]
+                    prediction = torch.argmax(probs).item()
+                    predicted_class = st.session_state.data_info['label_names'][prediction]
+                
+                # Show prediction with check/x mark
+                st.markdown(f"**Predicted Class**: {predicted_class} " + 
+                           ("✓" if prediction == sample_label.item() else "✗"))
+                
+                # Show probabilities
+                prob_df = pd.DataFrame({
+                    'Class': st.session_state.data_info['label_names'],
+                    'Probability': probs.numpy()
+                }).sort_values('Probability', ascending=False)
+                
+                st.dataframe(prob_df)
+            
+            # Display activation path visualization using Plotly (interactive)
+            st.subheader("Activation Path")
+            
+            # Use the activation_tracer for interactive visualization
+            if 'activation_tracer' not in st.session_state:
+                # Create one if it doesn't exist
+                st.session_state.activation_tracer = ActivationTracer(
+                    st.session_state.model,
+                    st.session_state.data_info['feature_names'],
+                    st.session_state.data_info['label_names']
+                )
+            
+            # Get and display the interactive visualization
+            fig = st.session_state.activation_tracer.plot_activation_flow(
+                sample_input=sample_datapoint,
+                sample_label=sample_label
+            )
+            
+            # Display with increased height for better visibility
+            st.plotly_chart(fig, use_container_width=True, height=600)
+            
+            # Additional activation visualizations (optional)
+            if st.checkbox("Show Detailed Neuron Activation Heatmap"):
+                st.subheader("Neuron Activation Heatmap")
+                fig = st.session_state.visualizer.visualize_activations(sample_datapoint)
+                st.pyplot(fig)
+        else:
+            st.info("Please train a model and select a sample to see activations.")
 
 else:
     st.info("Please train a model to see visualizations.")
