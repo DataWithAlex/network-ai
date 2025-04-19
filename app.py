@@ -117,9 +117,8 @@ def load_and_train():
     
     # Create visualizer
     visualizer = NetworkVisualizer(model, data_info["feature_names"], data_info["label_names"])
-    
-    # Create activation tracer
     activation_tracer = ActivationTracer(model, data_info["feature_names"], data_info["label_names"])
+    
     
     # Sample a random datapoint for activation visualization
     sample_idx = np.random.randint(0, len(data_info["test_dataset"]))
@@ -263,8 +262,8 @@ if st.session_state.model is not None:
         # Keep the static visualization as an option
         if st.checkbox("Show Traditional Network Diagram"):
             st.subheader("Traditional Network Diagram")
-            fig = st.session_state.visualizer.plot_network_architecture()
-            st.pyplot(fig)
+            fig = st.session_state.visualizer.plot_network_interactive()
+            st.plotly_chart(fig, use_container_width=True)
         
         # Add sample input tracing
         st.subheader("Sample Input Tracing")
@@ -340,7 +339,7 @@ if st.session_state.model is not None:
                 sample_input=sample_datapoint,
                 sample_label=sample_label
             )
-            st.pyplot(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Select a sample to see how it propagates through the network.")
     
@@ -374,7 +373,7 @@ if st.session_state.model is not None:
         axes[1].legend()
         
         plt.tight_layout()
-        st.pyplot(fig)
+        st.plotly_chart(fig, use_container_width=True)
         
         # Display performance metrics
         st.subheader("Model Performance Metrics")
@@ -411,7 +410,7 @@ if st.session_state.model is not None:
             ax.set_xlabel("Predicted Label")
             ax.set_ylabel("True Label")
             fig.tight_layout()
-            st.pyplot(fig)
+            st.plotly_chart(fig, use_container_width=True)
             
         with col2:
             st.subheader("Classification Report")
@@ -435,7 +434,7 @@ if st.session_state.model is not None:
             
             # Pass the data to the visualization method
             fig = st.session_state.visualizer.visualize_feature_importance(X=original_X, y=original_y)
-            st.pyplot(fig)
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.error("Original dataset information not available in session state")
     
@@ -481,7 +480,7 @@ if st.session_state.model is not None:
                     y=subset_y, 
                     layer_outputs=intermediate_features
                 )
-                st.pyplot(fig)
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.error("Original dataset information not available in session state")
         
@@ -518,7 +517,7 @@ if st.session_state.model is not None:
                     layer_outputs=intermediate_features,
                     perplexity=perplexity
                 )
-                st.pyplot(fig)
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.error("Original dataset information not available in session state")
     
@@ -606,19 +605,19 @@ if st.session_state.model is not None:
                 )
             
             # Get and display the interactive visualization
-            fig = st.session_state.activation_tracer.plot_activation_flow(
+            fig = st.session_state.activation_tracer.create_interactive_network_flow(
                 sample_input=sample_datapoint,
                 sample_label=sample_label
             )
             
-            # Display with increased height for better visibility
-            st.plotly_chart(fig, use_container_width=True, height=600)
+            # Make sure to use st.plotly_chart for Plotly figures
+            st.plotly_chart(fig, use_container_width=True)
             
             # Additional activation visualizations (optional)
             if st.checkbox("Show Detailed Neuron Activation Heatmap"):
                 st.subheader("Neuron Activation Heatmap")
                 fig = st.session_state.visualizer.visualize_activations(sample_datapoint)
-                st.pyplot(fig)
+                st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Please train a model and select a sample to see activations.")
 

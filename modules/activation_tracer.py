@@ -91,7 +91,7 @@ class ActivationTracer:
             
     def _create_mlp_flow_visualization(self, activation_info):
         """
-        Create detailed flow visualization for MLP models with larger nodes and text
+        Create detailed flow visualization for MLP models
         """
         # Extract info from the activation_info
         hyperparams = activation_info["hyperparams"]
@@ -106,13 +106,13 @@ class ActivationTracer:
         hidden_sizes = hyperparams["Hidden Layers"]
         output_size = hyperparams["Output Size"]
         
-        # Create figure - make it larger for better visibility
-        fig, ax = plt.subplots(figsize=(14, 9))
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
         
         # Calculate layout dimensions
         all_layer_sizes = [input_size] + hidden_sizes + [output_size]
         max_layer_size = max(all_layer_sizes)
-        layer_spacing = 4.0  # Increase horizontal spacing between layers
+        layer_spacing = 3.5  # Horizontal spacing between layers
         
         # Create a NetworkX graph for visualization
         G = nx.DiGraph()
@@ -137,7 +137,7 @@ class ActivationTracer:
                 input_val = sample_input[i] if i < len(sample_input) else 0
                 
             # Normalize input for coloring
-            intensity = min(1.0, max(0.3, abs(float(input_val)) / 5))  # Clamp between 0.3 and 1.0
+            intensity = min(1.0, max(0.2, abs(float(input_val)) / 5))  # Clamp between 0.2 and 1.0
             neuron_colors[node_id] = (0.4, 0.4, 0.8, intensity)
         
         # Add hidden layers
@@ -164,10 +164,10 @@ class ActivationTracer:
                     act_val = act_tensor[0, i].item() if i < act_tensor.shape[1] else 0
                     
                     # Normalize activation for coloring
-                    intensity = min(1.0, max(0.3, abs(float(act_val)) / 5))  # Clamp between 0.3 and 1.0
+                    intensity = min(1.0, max(0.2, abs(float(act_val)) / 5))  # Clamp between 0.2 and 1.0
                     neuron_colors[node_id] = (0.3, 0.7, 0.3, intensity)
                 else:
-                    neuron_colors[node_id] = (0.3, 0.7, 0.3, 0.4)  # Default hidden layer color
+                    neuron_colors[node_id] = (0.3, 0.7, 0.3, 0.3)  # Default hidden layer color
                 
                 # Connect to previous layer with weighted edges
                 for j, prev_id in enumerate(prev_layer_ids):
@@ -198,7 +198,7 @@ class ActivationTracer:
             
             # Color based on output probability
             prob = probabilities[i]
-            intensity = min(1.0, max(0.3, float(prob)))  # Scale based on probability
+            intensity = min(1.0, max(0.2, float(prob)))  # Scale based on probability
             
             # Highlight predicted class
             if i == predicted_class:
@@ -218,15 +218,10 @@ class ActivationTracer:
                 # Add edge with weight
                 G.add_edge(prev_id, node_id, weight=weight)
         
-        # Visualization parameters - increase node size
+        # Visualization parameters
         node_sizes = {}
         for node in G.nodes():
-            if "input" in node:
-                node_sizes[node] = 450  # Larger input nodes
-            elif "hidden" in node:
-                node_sizes[node] = 450  # Larger hidden nodes
-            else:  # output
-                node_sizes[node] = 500  # Even larger output nodes
+            node_sizes[node] = 300  # Consistent node size
         
         # Edge colors based on weight polarity and magnitude
         edge_colors = []
@@ -235,12 +230,12 @@ class ActivationTracer:
         for u, v, data in G.edges(data=True):
             weight = data.get('weight', 0)
             # Normalize weight for visualization
-            width = 1.5 + 2.5 * min(1, abs(weight))  # Thicker lines
+            width = 1 + 2 * min(1, abs(weight))
             
             if weight > 0:
-                edge_colors.append((0, 0.5, 0, min(0.9, 0.2 + abs(weight) * 0.7)))  # Green for positive
+                edge_colors.append((0, 0.5, 0, min(0.8, 0.2 + abs(weight) * 0.6)))  # Green for positive
             else:
-                edge_colors.append((0.8, 0, 0, min(0.9, 0.2 + abs(weight) * 0.7)))  # Red for negative
+                edge_colors.append((0.8, 0, 0, min(0.8, 0.2 + abs(weight) * 0.6)))  # Red for negative
             
             edge_widths.append(width)
         
@@ -259,10 +254,10 @@ class ActivationTracer:
             pos=node_positions, 
             edge_color=edge_colors,
             width=edge_widths,
-            alpha=0.7,
+            alpha=0.6,
             ax=ax,
             arrows=True,
-            arrowsize=15,  # Larger arrows
+            arrowsize=10,
             arrowstyle='->'
         )
         
@@ -272,46 +267,46 @@ class ActivationTracer:
             node_id = f"input_{i}"
             x, y = node_positions[node_id]
             label = self.feature_names[i] if i < len(self.feature_names) else f"Feature {i}"
-            ax.text(x - 0.5, y, label, ha='right', va='center', fontsize=10)  # Larger font
+            ax.text(x - 0.5, y, label, ha='right', va='center', fontsize=8)
             
             # Add input value if provided
             if torch.is_tensor(sample_input):
                 val = sample_input[i].item() if i < len(sample_input) else 0
             else:
                 val = sample_input[i] if i < len(sample_input) else 0
-            ax.text(x + 0.05, y - 0.25, f"{val:.2f}", ha='center', va='center', fontsize=9, color='blue')  # Larger font
+            ax.text(x + 0.05, y - 0.2, f"{val:.2f}", ha='center', va='center', fontsize=7, color='blue')
         
         # Output layer
         for i in range(output_size):
             node_id = f"output_{i}"
             x, y = node_positions[node_id]
             label = self.label_names[i] if i < len(self.label_names) else f"Class {i}"
-            ax.text(x + 0.5, y, label, ha='left', va='center', fontsize=11)  # Larger font
+            ax.text(x + 0.5, y, label, ha='left', va='center', fontsize=8)
             
             # Add probability
             prob = probabilities[i]
             color = 'red' if i == predicted_class else 'blue'
-            ax.text(x + 0.05, y - 0.25, f"{prob:.2f}", ha='center', va='center', fontsize=9, color=color)  # Larger font
+            ax.text(x + 0.05, y - 0.2, f"{prob:.2f}", ha='center', va='center', fontsize=7, color=color)
         
         # Draw layer titles
-        ax.text(0, max_layer_size + 0.7, "Input Layer", ha='center', va='center', fontsize=13, fontweight='bold')
+        ax.text(0, max_layer_size + 0.5, "Input Layer", ha='center', va='center', fontsize=10, fontweight='bold')
         
         for l, size in enumerate(hidden_sizes):
             layer_x = (l + 1) * layer_spacing
-            ax.text(layer_x, max_layer_size + 0.7, f"Hidden Layer {l+1}", ha='center', va='center', fontsize=13, fontweight='bold')
+            ax.text(layer_x, max_layer_size + 0.5, f"Hidden Layer {l+1}", ha='center', va='center', fontsize=10, fontweight='bold')
         
-        ax.text((len(hidden_sizes) + 1) * layer_spacing, max_layer_size + 0.7, "Output Layer", ha='center', va='center', fontsize=13, fontweight='bold')
+        ax.text((len(hidden_sizes) + 1) * layer_spacing, max_layer_size + 0.5, "Output Layer", ha='center', va='center', fontsize=10, fontweight='bold')
         
         # Title and layout
         true_label = activation_info["true_label"]
         pred_label = activation_info["predicted_label"]
         if true_label is not None:
-            ax.set_title(f"Neural Network Activation - True: {true_label}, Predicted: {pred_label}", fontsize=14)
+            ax.set_title(f"Neural Network Activation - True: {true_label}, Predicted: {pred_label}")
         else:
-            ax.set_title(f"Neural Network Activation - Predicted: {pred_label}", fontsize=14)
+            ax.set_title(f"Neural Network Activation - Predicted: {pred_label}")
         
         ax.set_xlim(-1, (len(hidden_sizes) + 1) * layer_spacing + 1)
-        ax.set_ylim(-1, max_layer_size + 1.2)  # Give more space at the top for titles
+        ax.set_ylim(-1, max_layer_size + 1)
         ax.axis('off')
         
         return fig
@@ -361,13 +356,7 @@ class ActivationTracer:
                 x=[self.feature_names[i] if i < len(self.feature_names) else f"Feature {i}" for i in range(input_size)],
                 y=input_values,
                 name="Input Values",
-                marker=dict(
-                    color=['rgba(65, 105, 225, 0.8)'] * input_size,
-                    line=dict(width=1, color='rgb(25, 25, 112)')
-                ),
-                hovertemplate='%{x}: %{y:.4f}<extra></extra>',
-                textposition='auto',
-                textfont=dict(size=14)
+                marker_color=['rgba(65, 105, 225, 0.7)'] * input_size
             ))
             
             # Add hidden layer activations
@@ -379,14 +368,8 @@ class ActivationTracer:
                         x=[f"Neuron {j+1}" for j in range(size)],
                         y=act_values,
                         name=f"Hidden Layer {i+1} Activations",
-                        marker=dict(
-                            color=['rgba(50, 205, 50, 0.8)'] * size,
-                            line=dict(width=1, color='rgb(0, 100, 0)')
-                        ),
-                        visible=False,
-                        hovertemplate='%{x}: %{y:.4f}<extra></extra>',
-                        textposition='auto',
-                        textfont=dict(size=14)
+                        marker_color=['rgba(50, 205, 50, 0.7)'] * size,
+                        visible=False
                     ))
             
             # Add output layer probabilities
@@ -394,15 +377,9 @@ class ActivationTracer:
                 x=[self.label_names[i] if i < len(self.label_names) else f"Class {i}" for i in range(output_size)],
                 y=output_probs,
                 name="Output Probabilities",
-                marker=dict(
-                    color=['rgba(220, 20, 60, 0.9)' if i == activation_info["predicted_class"] else 'rgba(128, 0, 0, 0.6)' 
-                          for i in range(output_size)],
-                    line=dict(width=1, color='rgb(139, 0, 0)')
-                ),
-                visible=False,
-                hovertemplate='%{x}: %{y:.4f}<extra></extra>',
-                textposition='auto',
-                textfont=dict(size=14)
+                marker_color=['rgba(220, 20, 60, 0.7)' if i == activation_info["predicted_class"] else 'rgba(128, 0, 0, 0.5)' 
+                              for i in range(output_size)],
+                visible=False
             ))
             
             # Create slider for navigating through layers
@@ -411,50 +388,25 @@ class ActivationTracer:
                 step = {
                     'method': 'update',
                     'args': [{'visible': [j == i for j in range(len(layer_names))]},
-                            {'title': f"Layer Activations: {layer_name}"}],
+                             {'title': f"Layer Activations: {layer_name}"}],
                     'label': layer_name
                 }
                 steps.append(step)
             
             sliders = [dict(
                 active=0,
-                currentvalue={"prefix": "Viewing: ", "font": {"size": 16}},
-                pad={"t": 50},
                 steps=steps
             )]
             
-            # Get true and predicted labels for the title
-            true_label = activation_info["true_label"] if "true_label" in activation_info else None
-            pred_label = activation_info["predicted_label"]
-            
             # Update layout
-            title_text = f"Neural Network Activation - True: {true_label}, Predicted: {pred_label}" if true_label else f"Neural Network Activation - Predicted: {pred_label}"
-            
             fig.update_layout(
-                title={
-                    'text': title_text,
-                    'y': 0.95,
-                    'x': 0.5,
-                    'xanchor': 'center',
-                    'yanchor': 'top',
-                    'font': {'size': 18}
-                },
-                xaxis_title={"text": "Neurons", "font": {"size": 16}},
-                yaxis_title={"text": "Activation Value", "font": {"size": 16}},
+                title=f"Activation Values Through Network Layers",
+                xaxis_title="Neurons",
+                yaxis_title="Activation Value",
                 sliders=sliders,
-                height=600,  # Increased height
-                width=1000,  # Increased width
-                hoverlabel=dict(
-                    bgcolor="white",
-                    font_size=14,
-                    font_family="Arial"
-                ),
-                margin=dict(t=100, b=100, l=50, r=50)
+                height=500,
+                width=900
             )
-            
-            # Make text on axis labels larger
-            fig.update_xaxes(tickfont=dict(size=14))
-            fig.update_yaxes(tickfont=dict(size=14))
             
             return fig
         else:
@@ -463,6 +415,314 @@ class ActivationTracer:
             fig.add_annotation(
                 x=0.5, y=0.5,
                 text=f"Activation visualization not implemented for {hyperparams['Model Type']}",
+                showarrow=False,
+                font=dict(size=16)
+            )
+            return fig 
+    
+    def create_interactive_network_flow(self, sample_input, sample_label=None):
+        """
+        Create an interactive Plotly visualization showing the neural network as a graph
+        with nodes and edges, similar to the static NetworkX visualization but interactive.
+        
+        Args:
+            sample_input: Input tensor or array
+            sample_label: Optional ground truth label
+            
+        Returns:
+            Plotly figure with interactive network visualization
+        """
+        # Get activations through the network
+        activation_info = self.trace_sample(sample_input, sample_label)
+        
+        # Extract model structure information
+        hyperparams = activation_info["hyperparams"]
+        layer_weights = activation_info["layer_weights"]
+        activations = activation_info["activations"]
+        sample_input = activation_info["input"]
+        predicted_class = activation_info["predicted_class"]
+        probabilities = activation_info["probabilities"]
+        
+        # For MLPs, create the network visualization
+        if "MLP" in hyperparams["Model Type"]:
+            # Extract network dimensions
+            input_size = hyperparams["Input Size"]
+            hidden_sizes = hyperparams["Hidden Layers"]
+            output_size = hyperparams["Output Size"]
+            
+            # Calculate layout dimensions
+            all_layer_sizes = [input_size] + hidden_sizes + [output_size]
+            max_layer_size = max(all_layer_sizes)
+            layer_spacing = 3.5  # Horizontal spacing between layers
+            
+            # Create Plotly figure
+            fig = go.Figure()
+            
+            # Node positions, colors, and sizes
+            node_x = []
+            node_y = []
+            node_text = []
+            node_color = []
+            node_size = []
+            
+            # Edge positions and colors
+            edge_x = []
+            edge_y = []
+            edge_color = []
+            edge_width = []
+            
+            # Add nodes for each neuron
+            layer_x = 0
+            node_positions = {}
+            node_ids = []
+            
+            # Add input layer
+            input_ids = []
+            for i in range(input_size):
+                node_id = f"input_{i}"
+                input_ids.append(node_id)
+                
+                # Center the layer vertically
+                vertical_position = (max_layer_size - input_size) / 2 + i
+                node_positions[node_id] = (layer_x, vertical_position)
+                
+                node_x.append(layer_x)
+                node_y.append(vertical_position)
+                
+                # Node label
+                label = self.feature_names[i] if i < len(self.feature_names) else f"Feature {i}"
+                
+                # Input value
+                if torch.is_tensor(sample_input):
+                    val = sample_input[i].item() if i < len(sample_input) else 0
+                else:
+                    val = sample_input[i] if i < len(sample_input) else 0
+                    
+                node_text.append(f"{label}<br>Value: {val:.2f}")
+                
+                # Color based on input value
+                intensity = min(1.0, max(0.2, abs(float(val)) / 5))  # Clamp between 0.2 and 1.0
+                node_color.append(f"rgba(100, 149, 237, {intensity})")  # Cornflower blue
+                node_size.append(30)
+            
+            # Previous layer for connections
+            prev_layer_ids = input_ids
+            
+            # Add hidden layers
+            for l, size in enumerate(hidden_sizes):
+                layer_x += layer_spacing
+                layer_ids = []
+                
+                for i in range(size):
+                    node_id = f"hidden_{l}_{i}"
+                    layer_ids.append(node_id)
+                    
+                    # Center the layer vertically
+                    vertical_position = (max_layer_size - size) / 2 + i
+                    node_positions[node_id] = (layer_x, vertical_position)
+                    
+                    node_x.append(layer_x)
+                    node_y.append(vertical_position)
+                    
+                    # Color based on activation value if available
+                    activation_key = f"linear_{l}"
+                    if activation_key in activations:
+                        act_tensor = activations[activation_key]
+                        act_val = act_tensor[0, i].item() if i < act_tensor.shape[1] else 0
+                        
+                        # Normalize activation for coloring
+                        intensity = min(1.0, max(0.2, abs(float(act_val)) / 5))  # Clamp between 0.2 and 1.0
+                        node_color.append(f"rgba(50, 205, 50, {intensity})")  # Lime green
+                        node_text.append(f"Hidden {l+1}, Neuron {i+1}<br>Activation: {act_val:.2f}")
+                    else:
+                        node_color.append("rgba(50, 205, 50, 0.3)")  # Default hidden layer color
+                        node_text.append(f"Hidden {l+1}, Neuron {i+1}")
+                    
+                    node_size.append(30)
+                    
+                    # Connect to previous layer with weighted edges
+                    for j, prev_id in enumerate(prev_layer_ids):
+                        prev_x, prev_y = node_positions[prev_id]
+                        curr_x, curr_y = node_positions[node_id]
+                        
+                        # Get weight
+                        weight_key = f"linear_{l}" if l == 0 else f"linear_{l}"
+                        if weight_key in layer_weights:
+                            weight = layer_weights[weight_key]["weight"][i, j].item() if j < layer_weights[weight_key]["weight"].shape[1] else 0
+                        else:
+                            weight = 0
+                        
+                        # Add edge points
+                        edge_x.append(prev_x)
+                        edge_x.append(curr_x)
+                        edge_x.append(None)  # Add None to create a break in the line
+                        
+                        edge_y.append(prev_y)
+                        edge_y.append(curr_y)
+                        edge_y.append(None)  # Add None to create a break in the line
+                        
+                        # Edge color based on weight
+                        width = 1 + 2 * min(1, abs(weight))
+                        edge_width.append(width)
+                        
+                        if weight > 0:
+                            edge_color.append(f"rgba(0, 128, 0, {min(0.8, 0.2 + abs(weight) * 0.6)})")  # Green for positive
+                        else:
+                            edge_color.append(f"rgba(255, 0, 0, {min(0.8, 0.2 + abs(weight) * 0.6)})")  # Red for negative
+                
+                # Update previous layer for next connections
+                prev_layer_ids = layer_ids
+            
+            # Add output layer
+            layer_x += layer_spacing
+            output_ids = []
+            
+            for i in range(output_size):
+                node_id = f"output_{i}"
+                output_ids.append(node_id)
+                
+                # Center the layer vertically
+                vertical_position = (max_layer_size - output_size) / 2 + i
+                node_positions[node_id] = (layer_x, vertical_position)
+                
+                node_x.append(layer_x)
+                node_y.append(vertical_position)
+                
+                # Label for output node
+                label = self.label_names[i] if i < len(self.label_names) else f"Class {i}"
+                
+                # Color based on output probability
+                prob = probabilities[i]
+                intensity = min(1.0, max(0.2, float(prob)))  # Scale based on probability
+                
+                # Highlight predicted class
+                if i == predicted_class:
+                    # Bright red for predicted class
+                    node_color.append(f"rgba(220, 20, 60, {intensity})")  # Crimson
+                else:
+                    # Normal output color with probability-based intensity
+                    node_color.append(f"rgba(255, 160, 122, {intensity})")  # Light salmon
+                
+                node_text.append(f"{label}<br>Probability: {prob:.2f}")
+                node_size.append(30)
+                
+                # Connect to previous layer with weighted edges
+                for j, prev_id in enumerate(prev_layer_ids):
+                    prev_x, prev_y = node_positions[prev_id]
+                    curr_x, curr_y = node_positions[node_id]
+                    
+                    if "linear_output" in layer_weights:
+                        weight = layer_weights["linear_output"]["weight"][i, j].item() if j < layer_weights["linear_output"]["weight"].shape[1] else 0
+                    else:
+                        weight = 0
+                    
+                    # Add edge points
+                    edge_x.append(prev_x)
+                    edge_x.append(curr_x)
+                    edge_x.append(None)  # Add None to create a break in the line
+                    
+                    edge_y.append(prev_y)
+                    edge_y.append(curr_y)
+                    edge_y.append(None)  # Add None to create a break in the line
+                    
+                    # Edge color based on weight
+                    width = 1 + 2 * min(1, abs(weight))
+                    edge_width.append(width)
+                    
+                    if weight > 0:
+                        edge_color.append(f"rgba(0, 128, 0, {min(0.8, 0.2 + abs(weight) * 0.6)})")  # Green for positive
+                    else:
+                        edge_color.append(f"rgba(255, 0, 0, {min(0.8, 0.2 + abs(weight) * 0.6)})")  # Red for negative
+            
+            # Create edge trace
+            edge_trace = go.Scatter(
+                x=edge_x, y=edge_y,
+                line=dict(width=1, color='rgba(150, 150, 150, 0.5)'),
+                hoverinfo='none',
+                mode='lines',
+                line_shape='linear',
+                opacity=0.8
+            )
+            
+            # Create node trace
+            node_trace = go.Scatter(
+                x=node_x, y=node_y,
+                mode='markers',
+                hoverinfo='text',
+                text=node_text,
+                marker=dict(
+                    showscale=False,
+                    color=node_color,
+                    size=node_size,
+                    line=dict(width=2, color='white')
+                )
+            )
+            
+            # Add layer titles
+            annotations = []
+            
+            # Input layer title
+            annotations.append(dict(
+                x=0, y=max_layer_size + 0.5,
+                xref='x', yref='y',
+                text="Input Layer",
+                showarrow=False,
+                font=dict(size=14)
+            ))
+            
+            # Hidden layer titles
+            for l, size in enumerate(hidden_sizes):
+                layer_x = (l + 1) * layer_spacing
+                annotations.append(dict(
+                    x=layer_x, y=max_layer_size + 0.5,
+                    xref='x', yref='y',
+                    text=f"Hidden Layer {l+1}",
+                    showarrow=False,
+                    font=dict(size=14)
+                ))
+            
+            # Output layer title
+            annotations.append(dict(
+                x=(len(hidden_sizes) + 1) * layer_spacing, y=max_layer_size + 0.5,
+                xref='x', yref='y',
+                text="Output Layer",
+                showarrow=False,
+                font=dict(size=14)
+            ))
+            
+            # Add traces to figure
+            fig.add_trace(edge_trace)
+            fig.add_trace(node_trace)
+            
+            # Title and layout
+            true_label = activation_info["true_label"]
+            pred_label = activation_info["predicted_label"]
+            
+            if true_label is not None:
+                title = f"Neural Network Activation - True: {true_label}, Predicted: {pred_label}"
+            else:
+                title = f"Neural Network Activation - Predicted: {pred_label}"
+            
+            fig.update_layout(
+                title=title,
+                titlefont_size=16,
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=20, l=5, r=5, t=40),
+                annotations=annotations,
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=600,
+                width=900
+            )
+            
+            return fig
+        else:
+            # Create placeholder for other model types
+            fig = go.Figure()
+            fig.add_annotation(
+                x=0.5, y=0.5,
+                text=f"Interactive network visualization not implemented for {hyperparams['Model Type']}",
                 showarrow=False,
                 font=dict(size=16)
             )
