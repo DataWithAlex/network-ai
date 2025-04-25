@@ -6,6 +6,7 @@ import torch
 import plotly.graph_objects as go
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+import plotly.express as px
 
 # Import our modules
 from modules.data_loader import get_dataset
@@ -168,18 +169,28 @@ if st.session_state.model is not None:
     with tab1:
         st.header("Model Information")
         
-        # Display dataset information
+        # Display dataset information with themed icons
         st.subheader("Dataset Information")
         dataset = get_dataset(dataset_name)
-        st.markdown(dataset.get_description())
         
-        st.markdown(f"""
-        **Dataset Statistics:**
-        - Number of features: {st.session_state.data_info['n_features']}
-        - Number of classes: {st.session_state.data_info['n_classes']}
-        - Feature names: {', '.join(st.session_state.data_info['feature_names'])}
-        - Class names: {', '.join(st.session_state.data_info['label_names'])}
-        """)
+        # Add themed icons based on dataset
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if dataset_name == "Iris":
+                st.image("assets/iris.png", width=150, caption="Iris Dataset")
+            elif dataset_name == "Titanic":
+                st.image("assets/titanic.jpg", width=150, caption="Titanic Dataset")
+        
+        with col2:
+            st.markdown(dataset.get_description())
+            
+            st.markdown(f"""
+            **Dataset Statistics:**
+            - Number of features: {st.session_state.data_info['n_features']}
+            - Number of classes: {st.session_state.data_info['n_classes']}
+            - Feature names: {', '.join(st.session_state.data_info['feature_names'])}
+            - Class names: {', '.join(st.session_state.data_info['label_names'])}
+            """)
         
         # Display model hyperparameters
         st.subheader("Model Hyperparameters")
@@ -284,35 +295,88 @@ if st.session_state.model is not None:
             sample_datapoint = st.session_state.sample_datapoint
             sample_label = st.session_state.sample_label
             
-            # Create 2 columns for the sample features and prediction
+            st.subheader("Sample Data Propagation")
+            st.markdown("See how this specific data point flows through the network and activates neurons.")
+            
             col1, col2 = st.columns(2)
             
             with col1:
-                # Display sample features
-                st.subheader("Sample Features")
+                # Enhanced sample data display with themed visuals
+                st.markdown("### Input Features")
                 
-                # Feature names and values
-                feature_names = st.session_state.data_info['feature_names']
-                
-                # Safely convert tensor values to native Python float values
-                if torch.is_tensor(sample_datapoint):
-                    feature_values = [float(val.item()) for val in sample_datapoint]
-                else:
-                    feature_values = [float(val) for val in sample_datapoint]
-                    
-                sample_df = pd.DataFrame({
-                    'Feature': feature_names,
-                    'Value': feature_values
+                # Create a more visually appealing feature display
+                feature_df = pd.DataFrame({
+                    'Feature': st.session_state.data_info['feature_names'],
+                    'Value': sample_datapoint.numpy()
                 })
-                st.dataframe(sample_df)
+                
+                # Add themed visualization based on dataset
+                if dataset_name == "Iris":
+                    st.markdown("""
+                    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 5px solid #4682b4;">
+                        <h4 style="color: #4682b4;">🌸 Iris Sample</h4>
+                        <p>This sample represents measurements from an iris flower.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create a radar chart for iris features
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatterpolar(
+                        r=sample_datapoint.numpy(),
+                        theta=st.session_state.data_info['feature_names'],
+                        fill='toself',
+                        name='Sample Features',
+                        line_color='rgb(70, 130, 180)'
+                    ))
+                    fig.update_layout(
+                        polar=dict(radialaxis=dict(visible=True)),
+                        showlegend=False,
+                        height=300
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                elif dataset_name == "Titanic":
+                    st.markdown("""
+                    <div style="background-color: #f0f5ff; padding: 15px; border-radius: 10px; border-left: 5px solid #000080;">
+                        <h4 style="color: #000080;">🚢 Passenger Information</h4>
+                        <p>This sample represents a passenger on the Titanic.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create a more informative display for Titanic data
+                    categorical_features = ['Sex', 'Class', 'Embarked']
+                    numerical_features = [f for f in st.session_state.data_info['feature_names'] if f not in categorical_features]
+                    
+                    # Display categorical features as icons/badges
+                    for i, feature in enumerate(st.session_state.data_info['feature_names']):
+                        value = sample_datapoint[i].item()
+                        if feature in categorical_features:
+                            if feature == 'Sex':
+                                icon = "👨" if value > 0.5 else "👩"
+                                label = "Male" if value > 0.5 else "Female"
+                            elif feature == 'Class':
+                                if value < 0.33:
+                                    icon, label = "🥇", "1st Class"
+                                elif value < 0.66:
+                                    icon, label = "🥈", "2nd Class"
+                                else:
+                                    icon, label = "🥉", "3rd Class"
+                            elif feature == 'Embarked':
+                                ports = ["Cherbourg", "Queenstown", "Southampton"]
+                                idx = min(int(value * 3), 2)
+                                icon, label = "🚢", ports[idx]
+                            
+                            st.markdown(f"**{feature}**: {icon} {label}")
+                
+                # Display the feature table for all datasets
+                st.dataframe(feature_df)
             
             with col2:
-                # Show true and predicted class
-                st.subheader("Classification Results")
+                # Show true and predicted class with enhanced visuals
+                st.markdown("### Classification Results")
                 
                 # Get true label
                 true_class = st.session_state.data_info['label_names'][sample_label.item()]
-                st.markdown(f"**True Class**: {true_class}")
                 
                 # Make prediction
                 with torch.no_grad():
@@ -321,17 +385,55 @@ if st.session_state.model is not None:
                     prediction = torch.argmax(probs).item()
                     predicted_class = st.session_state.data_info['label_names'][prediction]
                 
-                # Show prediction with check/x mark
-                st.markdown(f"**Predicted Class**: {predicted_class} " + 
-                           ("✓" if prediction == sample_label.item() else "✗"))
+                # Create a more visually appealing result display
+                is_correct = prediction == sample_label.item()
+                result_color = "#28a745" if is_correct else "#dc3545"
+                icon = "✅" if is_correct else "❌"
                 
-                # Show probabilities
+                st.markdown(f"""
+                <div style="background-color: rgba({','.join(['40, 167, 69, 0.1' if is_correct else '220, 53, 69, 0.1'])});
+                     padding: 15px; border-radius: 10px; border-left: 5px solid {result_color};">
+                    <h4>Prediction Result {icon}</h4>
+                    <p><b>True Class:</b> {true_class}</p>
+                    <p><b>Predicted Class:</b> {predicted_class}</p>
+                    <p><b>Confidence:</b> {probs[prediction].item()*100:.1f}%</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show class-specific visuals based on dataset
+                if dataset_name == "Iris":
+                    # Display the main iris image instead of individual species images
+                    st.markdown("### Iris Classification")
+                    st.markdown(f"""
+                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                        <p>Predicted class: <b>{predicted_class}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    # Display the iris image in full width
+                    st.image("assets/iris.png", caption="Iris Species Comparison", use_column_width=True)
+                elif dataset_name == "Titanic":
+                    # Display the Titanic image
+                    st.markdown("### Titanic Passenger Classification")
+                    st.markdown(f"""
+                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                        <p>Predicted survival status: <b>{predicted_class}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    # Display the Titanic image in full width
+                    st.image("assets/titanic.jpg", caption="RMS Titanic", use_column_width=True)
+                
+                # Show probabilities as a horizontal bar chart
+                st.markdown("### Class Probabilities")
                 prob_df = pd.DataFrame({
                     'Class': st.session_state.data_info['label_names'],
                     'Probability': probs.numpy()
                 }).sort_values('Probability', ascending=False)
                 
-                st.dataframe(prob_df)
+                fig = px.bar(prob_df, x='Probability', y='Class', orientation='h',
+                            color='Probability', color_continuous_scale='Blues',
+                            text=prob_df['Probability'].apply(lambda x: f"{x:.2%}"))
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
             
             # Display network with activations using full width
             st.subheader("Activation Path")
@@ -566,12 +668,11 @@ if st.session_state.model is not None:
                 st.dataframe(sample_df)
             
             with col2:
-                # Show true and predicted class
-                st.subheader("Classification Results")
+                # Show true and predicted class with enhanced visuals
+                st.markdown("### Classification Results")
                 
                 # Get true label
                 true_class = st.session_state.data_info['label_names'][sample_label.item()]
-                st.markdown(f"**True Class**: {true_class}")
                 
                 # Make prediction
                 with torch.no_grad():
@@ -580,17 +681,55 @@ if st.session_state.model is not None:
                     prediction = torch.argmax(probs).item()
                     predicted_class = st.session_state.data_info['label_names'][prediction]
                 
-                # Show prediction with check/x mark
-                st.markdown(f"**Predicted Class**: {predicted_class} " + 
-                           ("✓" if prediction == sample_label.item() else "✗"))
+                # Create a more visually appealing result display
+                is_correct = prediction == sample_label.item()
+                result_color = "#28a745" if is_correct else "#dc3545"
+                icon = "✅" if is_correct else "❌"
                 
-                # Show probabilities
+                st.markdown(f"""
+                <div style="background-color: rgba({','.join(['40, 167, 69, 0.1' if is_correct else '220, 53, 69, 0.1'])});
+                     padding: 15px; border-radius: 10px; border-left: 5px solid {result_color};">
+                    <h4>Prediction Result {icon}</h4>
+                    <p><b>True Class:</b> {true_class}</p>
+                    <p><b>Predicted Class:</b> {predicted_class}</p>
+                    <p><b>Confidence:</b> {probs[prediction].item()*100:.1f}%</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show class-specific visuals based on dataset
+                if dataset_name == "Iris":
+                    # Display the main iris image instead of individual species images
+                    st.markdown("### Iris Classification")
+                    st.markdown(f"""
+                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                        <p>Predicted class: <b>{predicted_class}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    # Display the iris image in full width
+                    st.image("assets/iris.png", caption="Iris Species Comparison", use_column_width=True)
+                elif dataset_name == "Titanic":
+                    # Display the Titanic image
+                    st.markdown("### Titanic Passenger Classification")
+                    st.markdown(f"""
+                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
+                        <p>Predicted survival status: <b>{predicted_class}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    # Display the Titanic image in full width
+                    st.image("assets/titanic.jpg", caption="RMS Titanic", use_column_width=True)
+                
+                # Show probabilities as a horizontal bar chart
+                st.markdown("### Class Probabilities")
                 prob_df = pd.DataFrame({
                     'Class': st.session_state.data_info['label_names'],
                     'Probability': probs.numpy()
                 }).sort_values('Probability', ascending=False)
                 
-                st.dataframe(prob_df)
+                fig = px.bar(prob_df, x='Probability', y='Class', orientation='h',
+                            color='Probability', color_continuous_scale='Blues',
+                            text=prob_df['Probability'].apply(lambda x: f"{x:.2%}"))
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
             
             # Display activation path visualization using Plotly (interactive)
             st.subheader("Activation Path")
