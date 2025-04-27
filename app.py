@@ -305,11 +305,22 @@ if st.session_state.model is not None:
             
             # Display sample information first
             st.markdown("### Input Features")
-            feature_df = pd.DataFrame({
-                'Feature': st.session_state.data_info['feature_names'],
-                'Value': sample_datapoint.numpy()
-            })
-            st.dataframe(feature_df)
+            
+            # Create a more visually appealing feature display
+            feature_names = st.session_state.data_info['feature_names']
+            feature_values = sample_datapoint.numpy()
+            
+            # Create columns for feature visualization
+            feature_cols = st.columns(len(feature_names))
+            
+            # Display each feature in its own styled container
+            for i, (name, value) in enumerate(zip(feature_names, feature_values)):
+                with feature_cols[i]:
+                    st.metric(
+                        label=name,
+                        value=f"{value:.4f}",
+                        delta=None
+                    )
             
             # Display true and predicted labels
             with torch.no_grad():
@@ -320,19 +331,59 @@ if st.session_state.model is not None:
             true_label = st.session_state.data_info['label_names'][sample_label]
             pred_label = st.session_state.data_info['label_names'][prediction]
             
+            # Create a visual indicator for prediction correctness
+            is_correct = prediction == sample_label
+            
+            # Display prediction result with visual styling
+            if is_correct:
+                st.success(f"✅ TRUE POSITIVE: Model correctly predicted {pred_label}")
+            else:
+                st.error(f"❌ FALSE PREDICTION: Model predicted {pred_label}, but true class is {true_label}")
+            
+            # Create two columns for true and predicted class
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown(f"**True Class:** {true_label}")
+                st.info(f"**True Class:** {true_label}")
             with col2:
-                st.markdown(f"**Predicted Class:** {pred_label}")
+                if is_correct:
+                    st.success(f"**Predicted Class:** {pred_label}")
+                else:
+                    st.error(f"**Predicted Class:** {pred_label}")
             
-            # Display prediction probabilities
+            # Display prediction probabilities as a horizontal bar chart
             st.markdown("### Prediction Probabilities")
-            prob_df = pd.DataFrame({
-                'Class': st.session_state.data_info['label_names'],
-                'Probability': probs.numpy()
-            })
-            st.dataframe(prob_df)
+            
+            # Create a more visual probability display
+            fig = go.Figure()
+            
+            # Add bars for each class probability
+            for i, (label, prob) in enumerate(zip(st.session_state.data_info['label_names'], probs.numpy())):
+                # Highlight the predicted class
+                color = 'rgba(0, 204, 102, 0.8)' if i == prediction else 'rgba(49, 130, 189, 0.7)'
+                
+                # Add bar with percentage
+                fig.add_trace(go.Bar(
+                    x=[prob],
+                    y=[label],
+                    orientation='h',
+                    text=[f"{prob:.2%}"],
+                    textposition='auto',
+                    marker_color=color,
+                    name=label
+                ))
+            
+            # Update layout
+            fig.update_layout(
+                title="Class Probabilities",
+                xaxis_title="Probability",
+                yaxis_title="Class",
+                xaxis=dict(range=[0, 1]),
+                height=300,
+                margin=dict(l=20, r=20, t=40, b=20),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
             
             # Display the activation path visualization AFTER the tables
             st.markdown("### Network Activation Flow")
@@ -345,6 +396,23 @@ if st.session_state.model is not None:
             
             # Make sure to use st.plotly_chart for Plotly figures
             st.plotly_chart(flow_fig, use_container_width=True)
+            
+            # Add explanation of the visualization
+            with st.expander("How to interpret this visualization"):
+                st.markdown("""
+                ### Understanding the Network Flow
+                
+                - **Input nodes** (left): Show the normalized feature values
+                - **Hidden layer nodes** (middle): Show activation values after processing
+                - **Output nodes** (right): Show the probability for each class
+                
+                **Colors indicate:**
+                - **Green connections**: Positive weights (activating)
+                - **Red connections**: Negative weights (inhibiting)
+                - **Thickness**: Magnitude of the weight (stronger influence)
+                
+                **Hover** over any node or connection to see more details!
+                """)
         else:
             # If no sample is selected, show a message
             st.info("Select a sample to visualize data flow through the network.")
