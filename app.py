@@ -155,72 +155,80 @@ if st.sidebar.button("Train Model"):
 
 # Tabs for different visualizations
 if st.session_state.model is not None:
-    # Add a new tab for model information
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    # Remove the Activation Visualization tab
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Model Information",
         "Network Architecture", 
         "Training History", 
         "Feature Importance", 
-        "Data Projections",
-        "Activation Visualization"
+        "Data Projections"
     ])
     
     # Tab 1: Model Information
     with tab1:
         st.header("Model Information")
         
-        # Display dataset information with themed icons
+        # Dataset Information
         st.subheader("Dataset Information")
-        dataset = get_dataset(dataset_name)
         
-        # Add themed icons based on dataset
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if dataset_name == "Iris":
-                st.image("assets/iris.png", width=150, caption="Iris Dataset")
-            elif dataset_name == "Titanic":
-                st.image("assets/titanic.jpg", width=150, caption="Titanic Dataset")
-        
+        # Display dataset image centered above text
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown(dataset.get_description())
-            
-            st.markdown(f"""
-            **Dataset Statistics:**
-            - Number of features: {st.session_state.data_info['n_features']}
-            - Number of classes: {st.session_state.data_info['n_classes']}
-            - Feature names: {', '.join(st.session_state.data_info['feature_names'])}
-            - Class names: {', '.join(st.session_state.data_info['label_names'])}
+            if dataset_name == "Iris":
+                st.image("assets/iris.png", caption="Iris Dataset", use_column_width=True)
+            elif dataset_name == "Titanic":
+                st.image("assets/titanic.jpg", caption="Titanic Dataset", use_column_width=True)
+        
+        # Dataset description
+        if dataset_name == "Iris":
+            st.write("""
+            The Iris dataset consists of 150 samples from three species of Iris flowers. Each sample has four features: sepal length, 
+            sepal width, petal length, and petal width. This is a classic dataset for classification tasks.
+            """)
+        elif dataset_name == "Titanic":
+            st.write("""
+            The Titanic dataset contains information about passengers aboard the Titanic, including whether they survived. 
+            Features include age, gender, passenger class, fare, and more. This dataset is commonly used for binary classification.
             """)
         
-        # Display model hyperparameters
+        # Dataset statistics
+        st.markdown("**Dataset Statistics:**")
+        
+        # Get dataset info from session state
+        if 'data_info' in st.session_state:
+            data_info = st.session_state.data_info
+            
+            # Create bullet points for dataset statistics
+            st.markdown(f"* Number of features: {data_info['n_features']}")
+            st.markdown(f"* Number of classes: {data_info['n_classes']}")
+            st.markdown(f"* Feature names: {', '.join(data_info['feature_names'])}")
+            st.markdown(f"* Class names: {', '.join(data_info['label_names'])}")
+        
+        # Model Hyperparameters
         st.subheader("Model Hyperparameters")
-        hyperparams = st.session_state.model.get_hyperparameters()
         
-        # Convert hyperparameters to DataFrame for display
-        hyperparams_df = pd.DataFrame({
-            'Parameter': hyperparams.keys(),
-            'Value': hyperparams.values()
-        })
+        if 'model' in st.session_state:
+            hyperparams = st.session_state.model.get_hyperparameters()
+            
+            # Create a dataframe for hyperparameters
+            hyperparams_df = pd.DataFrame({
+                'Parameter': list(hyperparams.keys()),
+                'Value': list(hyperparams.values())
+            })
+            
+            st.dataframe(hyperparams_df)
         
-        st.dataframe(hyperparams_df)
-        
-        # Display model description
+        # Model Description
         st.subheader("Model Description")
-        st.markdown(st.session_state.model.get_description())
+        
+        if 'model' in st.session_state:
+            st.write(st.session_state.model.get_description())
     
     # Tab 2: Network Architecture
     with tab2:
         st.header("Neural Network Architecture")
         st.markdown("""
-        This interactive visualization shows the complete architecture of the neural network. 
-        **Hover your mouse over any component** to see detailed information.
-        
-        ### Layer Types:
-        - **Blue blocks**: Input layer nodes representing dataset features
-        - **Green blocks**: Fully connected (dense) layers with weights and biases
-        - **Purple circles**: Activation functions that introduce non-linearity
-        - **Gray blocks**: Dropout layers (regularization technique)
-        - **Red blocks**: Output layer representing classes
+        This interactive visualization shows the complete architecture of the neural network and how data flows through it.
         
         ### How to Use:
         1. **Hover** over any node to see its details and activation values
@@ -228,19 +236,100 @@ if st.session_state.model is not None:
         3. **Note the color and thickness** of connections to see weight importance
         """)
         
-        # Display the interactive visualization
-        st.subheader("Interactive Architecture Diagram")
+        # Initialize visualizer if not already done
+        if 'visualizer' not in st.session_state:
+            st.session_state.visualizer = NetworkVisualizer(
+                st.session_state.model,
+                st.session_state.data_info['feature_names'],
+                st.session_state.data_info['label_names']
+            )
+        
+        # Initialize activation tracer if not already done
+        if 'activation_tracer' not in st.session_state:
+            st.session_state.activation_tracer = ActivationTracer(
+                st.session_state.model,
+                st.session_state.data_info['feature_names'],
+                st.session_state.data_info['label_names']
+            )
+        
+        # Display the static network architecture diagram
+        st.subheader("Network Architecture Diagram")
         st.markdown("""
-        Hover over nodes to see details about each layer. 
-        The colors indicate different layer types as shown in the legend.
+        This diagram shows the complete structure of the neural network including:
+        - **Input Layer**: Features from the dataset
+        - **Hidden Layers**: Fully connected layers with their activation functions
+        - **Output Layer**: Class probabilities
+        
+        Hover over nodes to see details about each layer.
         """)
         
-        # Get and display the network visualization
-        try:
-            network_fig = st.session_state.visualizer.plot_network_interactive()
-            st.plotly_chart(network_fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error generating visualization: {str(e)}")
+        # Get the network architecture visualization
+        arch_fig = st.session_state.visualizer.plot_network_interactive()
+        st.plotly_chart(arch_fig, use_container_width=True)
+        
+        # Sample selection for activation flow
+        st.subheader("Activation Flow Visualization")
+        st.markdown("""
+        Select a sample to see how data flows through the network. This helps understand how the model processes 
+        inputs to make predictions.
+        """)
+        
+        if st.button("Select Random Sample"):
+            data_info = st.session_state.data_info
+            test_dataset = data_info["test_dataset"]
+            sample_idx = np.random.randint(0, len(test_dataset))
+            st.session_state.sample_datapoint, st.session_state.sample_label = test_dataset[sample_idx]
+        
+        # Display the sample details and network flow
+        if hasattr(st.session_state, 'sample_datapoint') and st.session_state.sample_datapoint is not None:
+            sample_datapoint = st.session_state.sample_datapoint
+            sample_label = st.session_state.sample_label
+            
+            # Display sample information first
+            st.markdown("### Input Features")
+            feature_df = pd.DataFrame({
+                'Feature': st.session_state.data_info['feature_names'],
+                'Value': sample_datapoint.numpy()
+            })
+            st.dataframe(feature_df)
+            
+            # Display true and predicted labels
+            with torch.no_grad():
+                output = st.session_state.model(sample_datapoint.unsqueeze(0))
+                probs = torch.softmax(output, dim=1)[0]
+                prediction = torch.argmax(probs).item()
+            
+            true_label = st.session_state.data_info['label_names'][sample_label]
+            pred_label = st.session_state.data_info['label_names'][prediction]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**True Class:** {true_label}")
+            with col2:
+                st.markdown(f"**Predicted Class:** {pred_label}")
+            
+            # Display prediction probabilities
+            st.markdown("### Prediction Probabilities")
+            prob_df = pd.DataFrame({
+                'Class': st.session_state.data_info['label_names'],
+                'Probability': probs.numpy()
+            })
+            st.dataframe(prob_df)
+            
+            # Display the activation path visualization AFTER the tables
+            st.markdown("### Network Activation Flow")
+            
+            # Get and display the interactive visualization
+            flow_fig = st.session_state.activation_tracer.create_interactive_network_flow(
+                sample_input=sample_datapoint,
+                sample_label=sample_label
+            )
+            
+            # Make sure to use st.plotly_chart for Plotly figures
+            st.plotly_chart(flow_fig, use_container_width=True)
+        else:
+            # If no sample is selected, show a message
+            st.info("Select a sample to visualize data flow through the network.")
         
         # Model parameter details
         st.subheader("Model Parameter Details")
@@ -269,181 +358,6 @@ if st.session_state.model is not None:
         
         param_df = pd.DataFrame(layer_params)
         st.dataframe(param_df)
-        
-        # Keep the static visualization as an option
-        if st.checkbox("Show Traditional Network Diagram"):
-            st.subheader("Traditional Network Diagram")
-            fig = st.session_state.visualizer.plot_network_interactive()
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Add sample input tracing
-        st.subheader("Sample Input Tracing")
-        st.markdown("""
-        This visualization shows how a sample input propagates through the network. Select a sample to see how the model
-        processes it to make a prediction. Node colors show activation strength, and edge colors/thickness show weight importance.
-        """)
-        
-        # Sample selection
-        if st.button("Select Random Sample"):
-            data_info = st.session_state.data_info
-            test_dataset = data_info["test_dataset"]
-            sample_idx = np.random.randint(0, len(test_dataset))
-            st.session_state.sample_datapoint, st.session_state.sample_label = test_dataset[sample_idx]
-        
-        # Display the sample details
-        if hasattr(st.session_state, 'sample_datapoint') and st.session_state.sample_datapoint is not None:
-            sample_datapoint = st.session_state.sample_datapoint
-            sample_label = st.session_state.sample_label
-            
-            st.subheader("Sample Data Propagation")
-            st.markdown("See how this specific data point flows through the network and activates neurons.")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Enhanced sample data display with themed visuals
-                st.markdown("### Input Features")
-                
-                # Create a more visually appealing feature display
-                feature_df = pd.DataFrame({
-                    'Feature': st.session_state.data_info['feature_names'],
-                    'Value': sample_datapoint.numpy()
-                })
-                
-                # Add themed visualization based on dataset
-                if dataset_name == "Iris":
-                    st.markdown("""
-                    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 5px solid #4682b4;">
-                        <h4 style="color: #4682b4;">🌸 Iris Sample</h4>
-                        <p>This sample represents measurements from an iris flower.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Create a radar chart for iris features
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatterpolar(
-                        r=sample_datapoint.numpy(),
-                        theta=st.session_state.data_info['feature_names'],
-                        fill='toself',
-                        name='Sample Features',
-                        line_color='rgb(70, 130, 180)'
-                    ))
-                    fig.update_layout(
-                        polar=dict(radialaxis=dict(visible=True)),
-                        showlegend=False,
-                        height=300
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                elif dataset_name == "Titanic":
-                    st.markdown("""
-                    <div style="background-color: #f0f5ff; padding: 15px; border-radius: 10px; border-left: 5px solid #000080;">
-                        <h4 style="color: #000080;">🚢 Passenger Information</h4>
-                        <p>This sample represents a passenger on the Titanic.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Create a more informative display for Titanic data
-                    categorical_features = ['Sex', 'Class', 'Embarked']
-                    numerical_features = [f for f in st.session_state.data_info['feature_names'] if f not in categorical_features]
-                    
-                    # Display categorical features as icons/badges
-                    for i, feature in enumerate(st.session_state.data_info['feature_names']):
-                        value = sample_datapoint[i].item()
-                        if feature in categorical_features:
-                            if feature == 'Sex':
-                                icon = "👨" if value > 0.5 else "👩"
-                                label = "Male" if value > 0.5 else "Female"
-                            elif feature == 'Class':
-                                if value < 0.33:
-                                    icon, label = "🥇", "1st Class"
-                                elif value < 0.66:
-                                    icon, label = "🥈", "2nd Class"
-                                else:
-                                    icon, label = "🥉", "3rd Class"
-                            elif feature == 'Embarked':
-                                ports = ["Cherbourg", "Queenstown", "Southampton"]
-                                idx = min(int(value * 3), 2)
-                                icon, label = "🚢", ports[idx]
-                            
-                            st.markdown(f"**{feature}**: {icon} {label}")
-                
-                # Display the feature table for all datasets
-                st.dataframe(feature_df)
-            
-            with col2:
-                # Show true and predicted class with enhanced visuals
-                st.markdown("### Classification Results")
-                
-                # Get true label
-                true_class = st.session_state.data_info['label_names'][sample_label.item()]
-                
-                # Make prediction
-                with torch.no_grad():
-                    output = st.session_state.model(sample_datapoint.unsqueeze(0))
-                    probs = torch.softmax(output, dim=1)[0]
-                    prediction = torch.argmax(probs).item()
-                    predicted_class = st.session_state.data_info['label_names'][prediction]
-                
-                # Create a more visually appealing result display
-                is_correct = prediction == sample_label.item()
-                result_color = "#28a745" if is_correct else "#dc3545"
-                icon = "✅" if is_correct else "❌"
-                
-                st.markdown(f"""
-                <div style="background-color: rgba({','.join(['40, 167, 69, 0.1' if is_correct else '220, 53, 69, 0.1'])});
-                     padding: 15px; border-radius: 10px; border-left: 5px solid {result_color};">
-                    <h4>Prediction Result {icon}</h4>
-                    <p><b>True Class:</b> {true_class}</p>
-                    <p><b>Predicted Class:</b> {predicted_class}</p>
-                    <p><b>Confidence:</b> {probs[prediction].item()*100:.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show class-specific visuals based on dataset
-                if dataset_name == "Iris":
-                    # Display the main iris image instead of individual species images
-                    st.markdown("### Iris Classification")
-                    st.markdown(f"""
-                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
-                        <p>Predicted class: <b>{predicted_class}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # Display the iris image in full width
-                    st.image("assets/iris.png", caption="Iris Species Comparison", use_column_width=True)
-                elif dataset_name == "Titanic":
-                    # Display the Titanic image
-                    st.markdown("### Titanic Passenger Classification")
-                    st.markdown(f"""
-                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
-                        <p>Predicted survival status: <b>{predicted_class}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # Display the Titanic image in full width
-                    st.image("assets/titanic.jpg", caption="RMS Titanic", use_column_width=True)
-                
-                # Show probabilities as a horizontal bar chart
-                st.markdown("### Class Probabilities")
-                prob_df = pd.DataFrame({
-                    'Class': st.session_state.data_info['label_names'],
-                    'Probability': probs.numpy()
-                }).sort_values('Probability', ascending=False)
-                
-                fig = px.bar(prob_df, x='Probability', y='Class', orientation='h',
-                            color='Probability', color_continuous_scale='Blues',
-                            text=prob_df['Probability'].apply(lambda x: f"{x:.2%}"))
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Display network with activations using full width
-            st.subheader("Activation Path")
-            fig = st.session_state.visualizer.plot_detailed_network(
-                sample_input=sample_datapoint,
-                sample_label=sample_label
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Select a sample to see how it propagates through the network.")
     
     # Tab 3: Training History
     with tab3:
@@ -622,143 +536,6 @@ if st.session_state.model is not None:
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.error("Original dataset information not available in session state")
-    
-    # Tab 6: Activation Visualization
-    with tab6:
-        st.header("Neuron Activations")
-        st.markdown("""
-        This visualization shows the activation values of each neuron in the network for a specific input example.
-        It helps understand how information flows through the network.
-        """)
-        
-        # Generate new sample button
-        if st.button("Generate New Sample", key="activation_new_sample"):
-            data_info = st.session_state.data_info
-            test_dataset = data_info["test_dataset"]
-            sample_idx = np.random.randint(0, len(test_dataset))
-            st.session_state.sample_datapoint, st.session_state.sample_label = test_dataset[sample_idx]
-            st.experimental_rerun()
-        
-        # Sample info and prediction
-        if hasattr(st.session_state, 'sample_datapoint') and st.session_state.sample_datapoint is not None:
-            sample_datapoint = st.session_state.sample_datapoint
-            sample_label = st.session_state.sample_label
-            
-            # Create two columns for sample information
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Display sample features
-                st.subheader("Sample Features")
-                
-                # Feature names and values
-                feature_names = st.session_state.data_info['feature_names']
-                
-                # Safely convert tensor values to native Python float values
-                if torch.is_tensor(sample_datapoint):
-                    feature_values = [float(val.item()) for val in sample_datapoint]
-                else:
-                    feature_values = [float(val) for val in sample_datapoint]
-                    
-                # Create and display dataframe
-                sample_df = pd.DataFrame({
-                    'Feature': feature_names,
-                    'Value': feature_values
-                })
-                st.dataframe(sample_df)
-            
-            with col2:
-                # Show true and predicted class with enhanced visuals
-                st.markdown("### Classification Results")
-                
-                # Get true label
-                true_class = st.session_state.data_info['label_names'][sample_label.item()]
-                
-                # Make prediction
-                with torch.no_grad():
-                    output = st.session_state.model(sample_datapoint.unsqueeze(0))
-                    probs = torch.softmax(output, dim=1)[0]
-                    prediction = torch.argmax(probs).item()
-                    predicted_class = st.session_state.data_info['label_names'][prediction]
-                
-                # Create a more visually appealing result display
-                is_correct = prediction == sample_label.item()
-                result_color = "#28a745" if is_correct else "#dc3545"
-                icon = "✅" if is_correct else "❌"
-                
-                st.markdown(f"""
-                <div style="background-color: rgba({','.join(['40, 167, 69, 0.1' if is_correct else '220, 53, 69, 0.1'])});
-                     padding: 15px; border-radius: 10px; border-left: 5px solid {result_color};">
-                    <h4>Prediction Result {icon}</h4>
-                    <p><b>True Class:</b> {true_class}</p>
-                    <p><b>Predicted Class:</b> {predicted_class}</p>
-                    <p><b>Confidence:</b> {probs[prediction].item()*100:.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show class-specific visuals based on dataset
-                if dataset_name == "Iris":
-                    # Display the main iris image instead of individual species images
-                    st.markdown("### Iris Classification")
-                    st.markdown(f"""
-                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
-                        <p>Predicted class: <b>{predicted_class}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # Display the iris image in full width
-                    st.image("assets/iris.png", caption="Iris Species Comparison", use_column_width=True)
-                elif dataset_name == "Titanic":
-                    # Display the Titanic image
-                    st.markdown("### Titanic Passenger Classification")
-                    st.markdown(f"""
-                    <div style="text-align: center; margin-top: 20px; margin-bottom: 20px;">
-                        <p>Predicted survival status: <b>{predicted_class}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # Display the Titanic image in full width
-                    st.image("assets/titanic.jpg", caption="RMS Titanic", use_column_width=True)
-                
-                # Show probabilities as a horizontal bar chart
-                st.markdown("### Class Probabilities")
-                prob_df = pd.DataFrame({
-                    'Class': st.session_state.data_info['label_names'],
-                    'Probability': probs.numpy()
-                }).sort_values('Probability', ascending=False)
-                
-                fig = px.bar(prob_df, x='Probability', y='Class', orientation='h',
-                            color='Probability', color_continuous_scale='Blues',
-                            text=prob_df['Probability'].apply(lambda x: f"{x:.2%}"))
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Display activation path visualization using Plotly (interactive)
-            st.subheader("Activation Path")
-            
-            # Use the activation_tracer for interactive visualization
-            if 'activation_tracer' not in st.session_state:
-                # Create one if it doesn't exist
-                st.session_state.activation_tracer = ActivationTracer(
-                    st.session_state.model,
-                    st.session_state.data_info['feature_names'],
-                    st.session_state.data_info['label_names']
-                )
-            
-            # Get and display the interactive visualization
-            fig = st.session_state.activation_tracer.create_interactive_network_flow(
-                sample_input=sample_datapoint,
-                sample_label=sample_label
-            )
-            
-            # Make sure to use st.plotly_chart for Plotly figures
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Additional activation visualizations (optional)
-            if st.checkbox("Show Detailed Neuron Activation Heatmap"):
-                st.subheader("Neuron Activation Heatmap")
-                fig = st.session_state.visualizer.visualize_activations(sample_datapoint)
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Please train a model and select a sample to see activations.")
 
 else:
     st.info("Please train a model to see visualizations.")

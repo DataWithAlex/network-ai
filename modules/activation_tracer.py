@@ -465,9 +465,9 @@ class ActivationTracer:
 
         # ------------------------------------------------ visual constants --
         node_R          = 0.35               # “radius” in data units (for edge shrink)
-        node_px         = 60
-        x_gap           = 5
-        y_gap           = 1.8
+        node_px         = 50
+        x_gap           = 20
+        y_gap           = 4
         max_nodes       = max(sizes)
         y0              = (max_nodes - 1) * y_gap / 2     # centre vertically
         font_sz         = 12
