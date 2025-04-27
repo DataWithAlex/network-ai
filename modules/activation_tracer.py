@@ -434,6 +434,49 @@ class ActivationTracer:
         import math
         import plotly.graph_objects as go
 
+        # ------------------------------------------------ visual config --
+        visual_config = {
+            # Node appearance
+            "node_radius": 0.35,           # Node "radius" in data units (for edge connections)
+            "node_size": 40,               # Size of nodes in pixels
+            "node_border_width": 2,        # Width of node border
+            "node_border_color": "black",  # Color of node border
+            
+            # Layout spacing
+            "x_gap": 25,                   # Horizontal spacing between layers
+            "y_gap": 8,                    # Vertical spacing between nodes in same layer
+            
+            # Text appearance
+            "font_size": 12,               # Font size for node text and labels
+            "input_label_offset": -8,      # X-offset for input feature labels
+            "output_label_offset": 8,      # X-offset for output class labels
+            
+            # Edge appearance
+            "edge_min_width": 0.5,         # Minimum edge width
+            "edge_max_width": 5,           # Maximum edge width
+            "edge_width_scale": 3,         # Scaling factor for edge width
+            "edge_min_opacity": 0.3,       # Minimum edge opacity
+            "edge_max_opacity": 0.9,       # Maximum edge opacity
+            "edge_weight_threshold": 0.03, # Minimum weight to show an edge
+            
+            # Colors
+            "input_node_color": "rgba(65,105,225,0.9)",   # Blue
+            "hidden_node_color": "rgba(50,205,50,0.9)",   # Green
+            "output_node_color": "rgba(220,20,60,0.9)",   # Red
+            "predicted_node_color": "rgba(255,215,0,0.9)", # Gold
+            "positive_edge_color": "rgba(0,128,0,{alpha})", # Green
+            "negative_edge_color": "rgba(255,0,0,{alpha})", # Red
+            
+            # Figure dimensions
+            "figure_width": 1400,          # Width of figure in pixels
+            "figure_height": 800,          # Height of figure in pixels
+            "margin_left": 40,             # Left margin
+            "margin_right": 40,            # Right margin
+            "margin_top": 100,              # Top margin
+            "margin_bottom": 40,           # Bottom margin
+            "plot_bg_color": "white"       # Background color
+        }
+
         model, feat, lab = self.model, self.feature_names, self.label_names
 
         # --------------------------------------------------- forward pass --
@@ -463,14 +506,14 @@ class ActivationTracer:
         w_keys        = [f'linear_{i}' for i in range(len(hidden_sizes))] + ['linear_output']
         weights       = [layer_weights[k]['weight'] for k in w_keys]
 
-        # ------------------------------------------------ visual constants --
-        node_R          = 0.35               # “radius” in data units (for edge shrink)
-        node_px         = 50
-        x_gap           = 20
-        y_gap           = 4
+        # ------------------------------------------------ layout variables --
+        node_R          = visual_config["node_radius"]
+        node_px         = visual_config["node_size"]
+        x_gap           = visual_config["x_gap"]
+        y_gap           = visual_config["y_gap"]
         max_nodes       = max(sizes)
         y0              = (max_nodes - 1) * y_gap / 2     # centre vertically
-        font_sz         = 12
+        font_sz         = visual_config["font_size"]
 
         node_xy = {}
         traces  = []
@@ -480,7 +523,14 @@ class ActivationTracer:
             traces.append(go.Scatter(
                 x=[x], y=[y],
                 mode="markers+text",
-                marker=dict(size=node_px, color=col, line=dict(width=2,color='black')),
+                marker=dict(
+                    size=node_px, 
+                    color=col, 
+                    line=dict(
+                        width=visual_config["node_border_width"],
+                        color=visual_config["node_border_color"]
+                    )
+                ),
                 text=[txt], textposition="middle center",
                 textfont=dict(size=font_sz, color='white'),
                 hoverinfo='text', hovertext=node_id,
@@ -491,11 +541,11 @@ class ActivationTracer:
         for i in range(n_in):
             y = i * y_gap - y0
             val = float(sample_input[i])
-            add_node(f'in_{i}', 0, y, f'{val:.2f}', 'rgba(65,105,225,0.9)')
+            add_node(f'in_{i}', 0, y, f'{val:.2f}', visual_config["input_node_color"])
             # feature name annotation
             fname = feat[i] if i < len(feat) else f'Feature {i}'
             traces.append(go.Scatter(
-                x=[-1], y=[y],
+                x=[visual_config["input_label_offset"]], y=[y],
                 mode='text', text=[fname],
                 textfont=dict(size=font_sz, color='black'),
                 hoverinfo='skip', showlegend=False))
@@ -507,17 +557,17 @@ class ActivationTracer:
             for j in range(h_size):
                 y = j * y_gap - y0
                 val = float(post_act[0, j]) if post_act is not None else 0.0
-                add_node(f'h{li}_{j}', x, y, f'{val:.2f}', 'rgba(50,205,50,0.9)')
+                add_node(f'h{li}_{j}', x, y, f'{val:.2f}', visual_config["hidden_node_color"])
 
         # output layer
         x_out = (len(hidden_sizes) + 1) * x_gap
         for i in range(n_out):
             y = i * y_gap - y0
-            col = 'rgba(255,215,0,0.9)' if i == pred else 'rgba(220,20,60,0.9)'
+            col = visual_config["predicted_node_color"] if i == pred else visual_config["output_node_color"]
             add_node(f'out_{i}', x_out, y, f'{float(probs[i]):.2f}', col)
             cname = lab[i] if i < len(lab) else f'Class {i}'
             traces.append(go.Scatter(
-                x=[x_out + 1], y=[y],
+                x=[x_out + visual_config["output_label_offset"]], y=[y],
                 mode='text', text=[cname],
                 textfont=dict(size=font_sz, color='black'),
                 hoverinfo='skip', showlegend=False))
@@ -529,9 +579,9 @@ class ActivationTracer:
             if d == 0: return
             sx, sy = x0 + (x1-x0)*node_R/d, y0 + (y1-y0)*node_R/d
             ex, ey = x1 - (x1-x0)*node_R/d, y1 - (y1-y0)*node_R/d
-            alpha  = 0.3 + 0.6*min(1, abs(w))
-            col    = f'rgba(0,128,0,{alpha})' if w>0 else f'rgba(255,0,0,{alpha})'
-            width  = min(5, 0.5 + 3*abs(w))
+            alpha  = visual_config["edge_min_opacity"] + (visual_config["edge_max_opacity"] - visual_config["edge_min_opacity"])*min(1, abs(w))
+            col    = visual_config["positive_edge_color"].format(alpha=alpha) if w>0 else visual_config["negative_edge_color"].format(alpha=alpha)
+            width  = min(visual_config["edge_max_width"], visual_config["edge_min_width"] + visual_config["edge_width_scale"]*abs(w))
             traces.append(go.Scatter(
                 x=[sx,ex], y=[sy,ey], mode='lines',
                 line=dict(color=col, width=width),
@@ -552,7 +602,7 @@ class ActivationTracer:
                 for i, from_id in enumerate(from_ids):
                     if i < W.shape[1] and j < W.shape[0]:
                         w = float(W[j, i])
-                        if abs(w) > 0.03:      # threshold to declutter
+                        if abs(w) > visual_config["edge_weight_threshold"]:
                             draw_edge(from_id, to_id, w)
 
         # ---------------------------------------------------- final layout --
@@ -562,7 +612,15 @@ class ActivationTracer:
             title=f"Neural Network Activation – True: {true_lab}, Predicted: {lab[pred]}",
             xaxis=dict(visible=False, range=[-2, x_out+2]),
             yaxis=dict(visible=False, range=[-y0-2, y0+2], scaleanchor='x', scaleratio=1),
-            width=1200, height=800, plot_bgcolor='white',
-            hovermode='closest', margin=dict(l=40,r=40,t=80,b=40)
+            width=visual_config["figure_width"], 
+            height=visual_config["figure_height"], 
+            plot_bgcolor=visual_config["plot_bg_color"],
+            hovermode='closest', 
+            margin=dict(
+                l=visual_config["margin_left"],
+                r=visual_config["margin_right"],
+                t=visual_config["margin_top"],
+                b=visual_config["margin_bottom"]
+            )
         )
         return fig
