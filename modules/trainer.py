@@ -109,13 +109,21 @@ class Trainer:
         
         accuracy = accuracy_score(targets, predictions)
         conf_matrix = confusion_matrix(targets, predictions)
-        report = classification_report(targets, predictions, target_names=label_names)
         
+        # Get classification report as text and as dictionary
+        report = classification_report(targets, predictions, target_names=label_names)
+        report_dict = classification_report(targets, predictions, target_names=label_names, output_dict=True)
+        
+        # Return all necessary data for visualizations including ROC curve data
         return {
             'accuracy': accuracy,
             'confusion_matrix': conf_matrix,
             'classification_report': report,
+            'classification_report_dict': report_dict,
             'predictions': predictions,
             'targets': targets,
-            'probabilities': probabilities
+            'probabilities': probabilities,
+            # Add these for ROC curve
+            'y_true': targets,
+            'y_score': probabilities
         } 
