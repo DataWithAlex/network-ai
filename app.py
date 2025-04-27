@@ -25,43 +25,55 @@ This application helps visualize neural networks through the lens of graph theor
 Explore how data flows through the network and how it transforms at each layer.
 """)
 
-# Sidebar for dataset selection and model parameters
-st.sidebar.header("Settings")
+# Create an expander for model configuration
+with st.expander("Model Configuration", expanded=True):
+    # Create three columns for the controls
+    col1, col2, col3 = st.columns(3)
 
-# Dataset selection
-dataset_name = st.sidebar.selectbox(
-    "Select Dataset",
-    ["Iris", "Titanic"]
-)
+    # Dataset and model selection in first column
+    with col1:
+        st.subheader("Dataset & Model")
+        
+        # Dataset selection
+        dataset_name = st.selectbox(
+            "Select Dataset",
+            ["Iris 🪻", "Titanic 🚢"]
+        )
+        
+        # Model type selection
+        model_type = st.selectbox(
+            "Select Model Type",
+            ["MLP 💾"]
+        )
 
-# Model type selection
-model_type = st.sidebar.selectbox(
-    "Select Model Type",
-    ["MLP"]
-)
+    # Model architecture in second column
+    with col2:
+        st.subheader("Model Architecture")
+        
+        # Set default hidden sizes based on dataset
+        if dataset_name == "Iris 🪻":
+            default_hidden_sizes = [8, 4]
+        else:
+            default_hidden_sizes = [16, 8]
+        
+        hidden_layer_1 = st.slider("Neurons in Hidden Layer 1", 2, 32, default_hidden_sizes[0])
+        hidden_layer_2 = st.slider("Neurons in Hidden Layer 2", 2, 32, default_hidden_sizes[1])
+        hidden_sizes = [hidden_layer_1, hidden_layer_2]
+        
+        dropout_rate = st.slider("Dropout Rate", 0.0, 0.5, 0.0, 0.1)
 
-# Model parameters
-st.sidebar.subheader("Model Architecture")
-if dataset_name == "Iris":
-    default_hidden_sizes = [8, 4]
-else:
-    default_hidden_sizes = [16, 8]
-
-hidden_layer_1 = st.sidebar.slider("Neurons in Hidden Layer 1", 2, 32, default_hidden_sizes[0])
-hidden_layer_2 = st.sidebar.slider("Neurons in Hidden Layer 2", 2, 32, default_hidden_sizes[1])
-hidden_sizes = [hidden_layer_1, hidden_layer_2]
-
-dropout_rate = st.sidebar.slider("Dropout Rate", 0.0, 0.5, 0.0, 0.1)
-
-# Training parameters
-st.sidebar.subheader("Training Parameters")
-learning_rate = st.sidebar.select_slider(
-    "Learning Rate",
-    options=[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05],
-    value=0.001
-)
-epochs = st.sidebar.slider("Number of Epochs", 10, 200, 50)
-batch_size = st.sidebar.slider("Batch Size", 8, 128, 32)
+    # Training parameters in third column
+    with col3:
+        st.subheader("Training Parameters")
+        
+        learning_rate = st.select_slider(
+            "Learning Rate",
+            options=[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05],
+            value=0.001
+        )
+        
+        epochs = st.slider("Number of Epochs", 10, 200, 50)
+        batch_size = st.slider("Batch Size", 8, 128, 32)
 
 # Initialize session state (to store trained model)
 if 'model' not in st.session_state:
@@ -85,13 +97,16 @@ if 'sample_label' not in st.session_state:
 
 # Function to load data and train model
 def load_and_train():
+    # Clean dataset name by removing emojis for the data loader
+    clean_dataset_name = "Iris" if "Iris" in dataset_name else "Titanic"
+    
     # Load and preprocess dataset
-    dataset = get_dataset(dataset_name, batch_size=batch_size)
+    dataset = get_dataset(clean_dataset_name, batch_size=batch_size)
     data_info = dataset.load_data()
     
     # Create model
     model = create_model(
-        model_type=model_type,
+        model_type=model_type.split()[0],  # Remove emoji from model type
         input_size=data_info["n_features"],
         hidden_sizes=hidden_sizes,
         output_size=data_info["n_classes"],
@@ -148,10 +163,13 @@ def load_and_train():
         'sample_label': sample_label
     }
 
-# Button to train model
-if st.sidebar.button("Train Model"):
-    load_and_train()
-    st.sidebar.success("Model trained successfully!")
+# Train model button (centered)
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    if st.button("Train Model", use_container_width=True):
+        with st.spinner("Training model..."):
+            load_and_train()
+        st.success("Model trained successfully!")
 
 # Tabs for different visualizations
 if st.session_state.model is not None:
@@ -174,13 +192,13 @@ if st.session_state.model is not None:
         # Display dataset image centered above text
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if dataset_name == "Iris":
+            if dataset_name == "Iris 🪻":
                 st.image("assets/iris.png", caption="Iris Dataset", use_column_width=True)
             elif dataset_name == "Titanic":
                 st.image("assets/titanic.jpg", caption="Titanic Dataset", use_column_width=True)
         
         # Dataset description
-        if dataset_name == "Iris":
+        if dataset_name == "Iris 🪻":
             st.write("""
             The Iris dataset consists of 150 samples from three species of Iris flowers. Each sample has four features: sepal length, 
             sepal width, petal length, and petal width. This is a classic dataset for classification tasks.
