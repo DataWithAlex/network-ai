@@ -708,6 +708,48 @@ if st.session_state.model is not None:
                     st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.error("Original dataset information not available in session state")
+            
+            # Add expanders for interpretation help
+            exp_col1, exp_col2 = st.columns([1, 1])
+            
+            with exp_col1:
+                with st.expander("How to interpret feature importance"):
+                    st.markdown("""
+                    ### Understanding Feature Importance
+                    
+                    The feature importance chart shows how much each input feature influences the model's predictions:
+                    
+                    - **Longer bars** indicate features with stronger influence on the model's decisions
+                    - **Values** represent the normalized importance (sum to 1.0)
+                    - **Calculation**: Based on the sum of absolute weights connecting each input to the first hidden layer
+                    
+                    This helps identify which features are most critical for the model's predictions. Features with higher importance:
+                    - Have stronger connections to neurons in the first hidden layer
+                    - Contribute more to the model's decision-making process
+                    - Should be prioritized when analyzing or collecting data
+                    
+                    Note: This is a simplified approximation of feature importance that works well for neural networks with a single hidden layer.
+                    """)
+            
+            with exp_col2:
+                with st.expander("How to interpret sensitivity analysis"):
+                    st.markdown("""
+                    ### Understanding Sensitivity Analysis
+                    
+                    The sensitivity analysis shows how changes in feature values affect the model's predictions:
+                    
+                    - **X-axis**: Different values of each feature (normalized)
+                    - **Y-axis**: Impact on prediction (how much the prediction changes)
+                    - **Lines**: Each line represents a different feature
+                    - **Steeper slopes** indicate features where small changes cause large effects on predictions
+                    
+                    This visualization helps you understand:
+                    - How robust the model is to changes in each feature
+                    - Which features have non-linear relationships with the output
+                    - The range of feature values where the model is most sensitive
+                    
+                    Features with high sensitivity are critical decision points for the model and may require special attention.
+                    """)
         else:
             st.info("Please train a model to see feature importance analysis.")
     
