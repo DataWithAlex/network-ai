@@ -417,49 +417,169 @@ class NetworkVisualizer:
             
         return fig
     
-    def visualize_feature_importance(self, X, y, method='weights'):
-        """Visualize feature importance based on input layer weights"""
+    def visualize_feature_importance(self, feature_names=None):
+        """
+        Visualize feature importance based on the weights of the first layer.
+        
+        Args:
+            feature_names: List of feature names (optional)
+            
+        Returns:
+            Plotly figure object
+        """
+        # Get model weights
         weights = self.model.get_layer_weights()
         
-        # Get the first layer weights
+        # Get first layer weights
         first_layer_name = list(weights.keys())[0]
         first_layer_weights = weights[first_layer_name]['weight']
         
         # Calculate feature importance as the sum of absolute weights
-        feature_importance = np.sum(np.abs(first_layer_weights), axis=0)
+        # Handle both PyTorch tensors and numpy arrays
+        if torch.is_tensor(first_layer_weights):
+            feature_importance = torch.sum(torch.abs(first_layer_weights), dim=0).detach().cpu().numpy()
+        else:
+            # If it's already a numpy array
+            feature_importance = np.sum(np.abs(first_layer_weights), axis=0)
         
-        # Normalize to get relative importance
-        if np.sum(feature_importance) > 0:
-            feature_importance = feature_importance / np.sum(feature_importance)
+        # Normalize to sum to 1
+        feature_importance = feature_importance / np.sum(feature_importance)
         
-        # Create a DataFrame for visualization
-        feature_names = self.feature_names if len(self.feature_names) == len(feature_importance) else [f"Feature {i+1}" for i in range(len(feature_importance))]
+        # Use provided feature names or default ones
+        if feature_names is None:
+            feature_names = self.feature_names if hasattr(self, 'feature_names') else [f"Feature {i}" for i in range(len(feature_importance))]
+        
+        # Create a DataFrame for easier plotting
         importance_df = pd.DataFrame({
             'Feature': feature_names,
             'Importance': feature_importance
         })
         
         # Sort by importance
-        importance_df = importance_df.sort_values('Importance', ascending=False)
+        importance_df = importance_df.sort_values('Importance', ascending=True)
         
-        # Plot
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bars = ax.barh(importance_df['Feature'], importance_df['Importance'], color='skyblue')
+        # Create the bar chart
+        fig = px.bar(
+            importance_df, 
+            y='Feature', 
+            x='Importance',
+            orientation='h',
+            title='Feature Importance Based on First Layer Weights',
+            labels={'Importance': 'Relative Importance', 'Feature': ''},
+            color='Importance',
+            color_continuous_scale='Blues'
+        )
         
-        # Add labels and title
-        ax.set_xlabel('Relative Importance')
-        ax.set_title('Feature Importance Based on First Layer Weights')
+        # Update layout
+        fig.update_layout(
+            height=400,
+            margin=dict(l=20, r=20, t=50, b=20),
+            coloraxis_showscale=False,
+            xaxis=dict(title_font=dict(size=14), tickfont=dict(size=12)),
+            yaxis=dict(title_font=dict(size=14), tickfont=dict(size=12)),
+            title_font=dict(size=16)
+        )
         
-        # Add a grid
-        ax.grid(axis='x', linestyle='--', alpha=0.7)
+        return fig
+
+    def perform_sensitivity_analysis(self, X, feature_names=None, n_samples=10):
+        """
+        Perform sensitivity analysis by varying each feature and measuring the impact on predictions.
         
-        # Add values on bars
-        for bar in bars:
-            width = bar.get_width()
-            ax.text(width + 0.01, bar.get_y() + bar.get_height()/2, 
-                   f'{width:.3f}', ha='left', va='center')
+        Args:
+            X: Input data (numpy array or tensor)
+            feature_names: List of feature names
+            n_samples: Number of variations to test per feature
+            
+        Returns:
+            Plotly figure object
+        """
+        # Convert to numpy if tensor
+        if torch.is_tensor(X):
+            X = X.numpy()
         
-        plt.tight_layout()
+        # Use provided feature names or default ones
+        if feature_names is None:
+            feature_names = self.feature_names if hasattr(self, 'feature_names') else [f"Feature {i}" for i in range(X.shape[1])]
+        
+        # Get baseline predictions
+        with torch.no_grad():
+            X_tensor = torch.tensor(X, dtype=torch.float32)
+            baseline_outputs = self.model(X_tensor)
+            baseline_probs = torch.softmax(baseline_outputs, dim=1).mean(dim=0).numpy()
+        
+        # Store sensitivity results
+        sensitivity_results = []
+        
+        # For each feature
+        for feature_idx in range(X.shape[1]):
+            feature_name = feature_names[feature_idx]
+            
+            # Get feature min and max
+            feature_min = np.min(X[:, feature_idx])
+            feature_max = np.max(X[:, feature_idx])
+            
+            # Create variations
+            variations = np.linspace(feature_min, feature_max, n_samples)
+            
+            # Store variation results
+            variation_impacts = []
+            
+            # For each variation
+            for variation in variations:
+                # Create a copy of the data
+                X_modified = X.copy()
+                
+                # Modify the feature
+                X_modified[:, feature_idx] = variation
+                
+                # Get predictions
+                with torch.no_grad():
+                    X_modified_tensor = torch.tensor(X_modified, dtype=torch.float32)
+                    outputs = self.model(X_modified_tensor)
+                    probs = torch.softmax(outputs, dim=1).mean(dim=0).numpy()
+                
+                # Calculate impact as the mean absolute difference in probabilities
+                impact = np.mean(np.abs(probs - baseline_probs))
+                
+                # Store result
+                variation_impacts.append({
+                    'Feature': feature_name,
+                    'Value': variation,
+                    'Impact': impact
+                })
+            
+            # Add to results
+            sensitivity_results.extend(variation_impacts)
+        
+        # Create DataFrame
+        sensitivity_df = pd.DataFrame(sensitivity_results)
+        
+        # Create the line chart
+        fig = px.line(
+            sensitivity_df,
+            x='Value',
+            y='Impact',
+            color='Feature',
+            title='Feature Sensitivity Analysis',
+            labels={
+                'Value': 'Feature Value',
+                'Impact': 'Impact on Prediction (Mean Absolute Difference)',
+                'Feature': 'Feature'
+            },
+            line_shape='linear'
+        )
+        
+        # Update layout
+        fig.update_layout(
+            height=500,
+            margin=dict(l=20, r=20, t=50, b=20),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+            xaxis=dict(title_font=dict(size=14), tickfont=dict(size=12)),
+            yaxis=dict(title_font=dict(size=14), tickfont=dict(size=12)),
+            title_font=dict(size=16)
+        )
+        
         return fig
     
     def visualize_embeddings(self, X, y, latent_dim=2, method='tsne'):

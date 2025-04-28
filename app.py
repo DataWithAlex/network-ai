@@ -662,25 +662,54 @@ if st.session_state.model is not None:
     
     # Tab 4: Feature Importance
     with tab4:
-        st.header("Feature Importance Analysis")
         st.markdown("""
+        ## Feature Importance Analysis
+        
         This visualization shows how each input feature impacts the model's predictions:
         
-        - **Higher values** indicate features that have a stronger influence on the model's decisions
-        - The visualization uses the weights from the first layer of the neural network
-        - For more complex models, this is an approximation of feature importance
+        * **Higher values** indicate features that have a stronger influence on the model's decisions
+        * The visualization uses the weights from the first layer of the neural network
+        * For more complex models, this is an approximation of feature importance
         """)
-
-        # Get original data from session state
-        if hasattr(st.session_state, 'data_info') and 'original_X' in st.session_state.data_info:
-            original_X = st.session_state.data_info['original_X']
-            original_y = st.session_state.data_info['original_y']
+        
+        # Check if model exists
+        if hasattr(st.session_state, 'model') and st.session_state.model is not None:
+            # Get feature names from session state
+            feature_names = st.session_state.data_info.get('feature_names', None)
             
-            # Pass the data to the visualization method
-            fig = st.session_state.visualizer.visualize_feature_importance(X=original_X, y=original_y)
-            st.plotly_chart(fig, use_container_width=True)
+            # Create two columns for the visualizations
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # Display feature importance based on weights
+                st.subheader("Feature Importance Based on First Layer Weights")
+                fig = st.session_state.visualizer.visualize_feature_importance(feature_names)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Display sensitivity analysis
+                st.subheader("Feature Sensitivity Analysis")
+                
+                # Get original data from session state
+                if hasattr(st.session_state, 'data_info') and 'original_X' in st.session_state.data_info:
+                    original_X = st.session_state.data_info['original_X']
+                    
+                    # Limit to 100 samples for performance
+                    sample_size = min(100, len(original_X))
+                    sample_indices = np.random.choice(len(original_X), sample_size, replace=False)
+                    sample_X = original_X[sample_indices]
+                    
+                    # Perform sensitivity analysis
+                    fig = st.session_state.visualizer.perform_sensitivity_analysis(
+                        X=sample_X,
+                        feature_names=feature_names,
+                        n_samples=10
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.error("Original dataset information not available in session state")
         else:
-            st.error("Original dataset information not available in session state")
+            st.info("Please train a model to see feature importance analysis.")
     
     # Tab 5: Data Projections
     with tab5:
