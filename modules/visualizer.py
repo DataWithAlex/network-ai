@@ -56,183 +56,301 @@ class NetworkVisualizer:
         self.weight_neg_color = 'rgba(255, 0, 0, 0.7)'  # Red for negative weights
         
     def plot_network_interactive(self):
-        """Create an interactive network visualization using Plotly that matches the original style"""
-        # Extract model structure and weights
-        hyperparams = self.model.get_hyperparameters()
+        """
+        Create an interactive visualization of the neural network architecture
+        with clear representation of activation functions.
         
-        # For MLPs
-        if "MLP" in hyperparams["Model Type"]:
-            input_size = hyperparams["Input Size"]
-            hidden_sizes = hyperparams["Hidden Layers"]
-            output_size = hyperparams["Output Size"]
-            activation_fn = hyperparams["Activation Function"]
+        Returns:
+            Plotly figure object
+        """
+        # Get model structure
+        if hasattr(self.model, 'get_network_structure'):
+            network_structure = self.model.get_network_structure()
+        else:
+            # Fallback to manual structure extraction
+            network_structure = self._extract_network_structure()
+        
+        # Extract layer weights for connection visualization
+        weights = self.model.get_layer_weights()
+        
+        # Create nodes and edges for the graph
+        nodes = []
+        edges = []
+        
+        # Define layer colors with better contrast
+        layer_colors = {
+            'input': 'rgba(65, 105, 225, 0.8)',  # Royal blue
+            'linear': 'rgba(60, 179, 113, 0.8)',  # Medium sea green
+            'activation': 'rgba(147, 112, 219, 0.8)',  # Medium purple
+            'output': 'rgba(220, 20, 60, 0.8)'   # Crimson
+        }
+        
+        # Calculate total number of layers for horizontal spacing
+        total_layers = len(network_structure)
+        
+        # Create nodes for each layer
+        node_id = 0
+        layer_nodes = {}  # Store nodes by layer for edge creation
+        
+        # First pass: create nodes
+        for i, layer in enumerate(network_structure):
+            layer_type = layer['type']
+            layer_name = layer['name']
+            num_nodes = layer['nodes']
             
-            # Create figure
-            fig = go.Figure()
+            # Calculate x position (evenly spaced)
+            x_pos = i / (total_layers - 1) if total_layers > 1 else 0.5
             
-            # Layer definitions
-            layers = []
-            # Add input layer
-            layers.append({
+            # Create a list to store node IDs for this layer
+            layer_nodes[layer_name] = []
+            
+            # Create nodes for this layer
+            for j in range(num_nodes):
+                # Calculate y position to center nodes vertically
+                y_pos = j - (num_nodes - 1) / 2
+                
+                # Determine node label based on layer type
+                if layer_type == 'input' and j < len(self.feature_names):
+                    label = self.feature_names[j]
+                elif layer_type == 'output' and j < len(self.label_names):
+                    label = self.label_names[j]
+                elif layer_type == 'activation':
+                    # Show activation function type (e.g., ReLU)
+                    label = f"{layer_name}"
+                else:
+                    label = f"{layer_name}<br>Node {j+1}" if num_nodes > 1 else layer_name
+                
+                # Create node with appropriate styling
+                node_info = {
+                    'id': node_id,
+                    'label': label,
+                    'x': x_pos,
+                    'y': y_pos,
+                    'size': 30,
+                    'color': layer_colors.get(layer_type, 'rgba(128, 128, 128, 0.8)'),
+                    'layer_type': layer_type,
+                    'layer_name': layer_name,
+                    'node_index': j
+                }
+                
+                nodes.append(node_info)
+                layer_nodes[layer_name].append(node_id)
+                node_id += 1
+        
+        # Second pass: create edges between layers
+        for i in range(len(network_structure) - 1):
+            current_layer = network_structure[i]
+            next_layer = network_structure[i + 1]
+            
+            current_layer_name = current_layer['name']
+            next_layer_name = next_layer['name']
+            
+            # Get weight matrix if available (for linear layers)
+            weight_key = current_layer_name if current_layer_name in weights else None
+            
+            # If this is a linear layer connecting to an activation layer, use special styling
+            is_activation_connection = next_layer['type'] == 'activation'
+            
+            # Connect each node in current layer to each node in next layer
+            for src_idx, src_node_id in enumerate(layer_nodes[current_layer_name]):
+                for dst_idx, dst_node_id in enumerate(layer_nodes[next_layer_name]):
+                    # Determine edge weight and color
+                    if weight_key and not is_activation_connection:
+                        # Use actual weights for connections between computation layers
+                        weight_matrix = weights[weight_key]['weight']
+                        if src_idx < weight_matrix.shape[1] and dst_idx < weight_matrix.shape[0]:
+                            weight = weight_matrix[dst_idx, src_idx]
+                            # Normalize weight for visualization
+                            weight_abs = abs(weight)
+                            # Color based on sign (green for positive, red for negative)
+                            edge_color = f'rgba(0, 128, 0, {min(0.8, 0.2 + weight_abs)})' if weight > 0 else f'rgba(255, 0, 0, {min(0.8, 0.2 + weight_abs)})'
+                            width = 1 + 3 * weight_abs
+                        else:
+                            # Default for out-of-range indices
+                            weight = 0
+                            edge_color = 'rgba(200, 200, 200, 0.3)'
+                            width = 1
+                    elif is_activation_connection:
+                        # For connections to activation layers, use a distinctive style
+                        # to show these are not weighted connections
+                        weight = 1.0
+                        edge_color = 'rgba(100, 100, 255, 0.7)'  # Blue for activation connections
+                        width = 2
+                    else:
+                        # Default for layers without weights
+                        weight = 0.5
+                        edge_color = 'rgba(200, 200, 200, 0.5)'
+                        width = 1
+                    
+                    # Create edge
+                    edge_info = {
+                        'source': src_node_id,
+                        'target': dst_node_id,
+                        'weight': weight,
+                        'color': edge_color,
+                        'width': width,
+                        'is_activation': is_activation_connection
+                    }
+                    
+                    edges.append(edge_info)
+        
+        # Create edge traces
+        edge_trace = []
+        
+        # Group edges by type for better visualization
+        edge_groups = {
+            'weights': [e for e in edges if not e['is_activation']],
+            'activations': [e for e in edges if e['is_activation']]
+        }
+        
+        # Create traces for each edge group
+        for group_name, group_edges in edge_groups.items():
+            for edge in group_edges:
+                source_node = nodes[edge['source']]
+                target_node = nodes[edge['target']]
+                
+                # Create line trace
+                trace = go.Scatter(
+                    x=[source_node['x'], target_node['x']],
+                    y=[source_node['y'], target_node['y']],
+                    mode='lines',
+                    line=dict(
+                        width=edge['width'],
+                        color=edge['color'],
+                        dash='dot' if edge['is_activation'] else 'solid'  # Dotted lines for activation connections
+                    ),
+                    hoverinfo='text',
+                    text=f"{'Activation' if edge['is_activation'] else 'Weight'}: {edge['weight']:.3f}",
+                    showlegend=False
+                )
+                
+                edge_trace.append(trace)
+        
+        # Create node trace
+        node_trace = go.Scatter(
+            x=[node['x'] for node in nodes],
+            y=[node['y'] for node in nodes],
+            mode='markers+text',
+            text=[node['label'] for node in nodes],
+            textposition='middle center',
+            hoverinfo='text',
+            marker=dict(
+                size=[node['size'] for node in nodes],
+                color=[node['color'] for node in nodes],
+                line=dict(width=2, color='white')
+            ),
+            showlegend=False
+        )
+        
+        # Create figure
+        fig = go.Figure(
+            data=edge_trace + [node_trace],
+            layout=go.Layout(
+                title='Neural Network Architecture: Multi-layer Perceptron (MLP)',
+                titlefont=dict(size=16),
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=20, l=5, r=5, t=40),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=600,
+                annotations=[
+                    dict(
+                        x=0,
+                        y=1.05,
+                        xref='paper',
+                        yref='paper',
+                        text='Input',
+                        showarrow=False,
+                        font=dict(size=14)
+                    ),
+                    dict(
+                        x=0.5,
+                        y=1.05,
+                        xref='paper',
+                        yref='paper',
+                        text='Hidden Layers',
+                        showarrow=False,
+                        font=dict(size=14)
+                    ),
+                    dict(
+                        x=1,
+                        y=1.05,
+                        xref='paper',
+                        yref='paper',
+                        text='Output',
+                        showarrow=False,
+                        font=dict(size=14)
+                    )
+                ]
+            )
+        )
+        
+        # Add a legend explaining the visualization
+        fig.add_annotation(
+            x=0.5,
+            y=-0.15,
+            xref='paper',
+            yref='paper',
+            text='<b>Legend:</b> Blue nodes = Input, Green nodes = Linear layers, Purple nodes = Activation functions, Red nodes = Output<br>' +
+                 'Green edges = Positive weights, Red edges = Negative weights, Blue dotted lines = Activation connections',
+            showarrow=False,
+            font=dict(size=12),
+            align='center',
+            bordercolor='black',
+            borderwidth=1,
+            borderpad=4,
+            bgcolor='white',
+            opacity=0.8
+        )
+        
+        return fig
+
+    def _extract_network_structure(self):
+        """
+        Fallback method to extract network structure if get_network_structure is not available.
+        """
+        # Basic structure extraction
+        structure = []
+        
+        # Add input layer
+        if hasattr(self.model, 'input_size'):
+            structure.append({
                 'name': 'Input',
                 'type': 'input',
-                'size': input_size,
-                'color': self.layer_colors['input']
+                'size': self.model.input_size,
+                'nodes': self.model.input_size
             })
-            
-            # Add hidden layers with activations
-            for i, size in enumerate(hidden_sizes):
-                # Linear layer
-                layers.append({
+        
+        # Add hidden layers
+        if hasattr(self.model, 'hidden_sizes'):
+            for i, size in enumerate(self.model.hidden_sizes):
+                # Add linear layer
+                structure.append({
                     'name': f'FC-{i+1}',
-                    'type': 'fc',
+                    'type': 'linear',
                     'size': size,
-                    'color': self.layer_colors['fc']
+                    'nodes': size
                 })
                 
-                # Activation layer
-                layers.append({
+                # Add activation layer
+                structure.append({
                     'name': f'ReLU-{i+1}',
                     'type': 'activation',
                     'size': size,
-                    'color': self.layer_colors['activation']
+                    'nodes': size
                 })
-                
-            # Add output layer
-            layers.append({
+        
+        # Add output layer
+        if hasattr(self.model, 'output_size'):
+            structure.append({
                 'name': 'Output',
                 'type': 'output',
-                'size': output_size,
-                'color': self.layer_colors['output']
+                'size': self.model.output_size,
+                'nodes': self.model.output_size
             })
-            
-            # Visualization parameters
-            layer_width = 120 
-            layer_spacing = 200  # Horizontal spacing between layers
-            node_spacing = 40    # Vertical spacing between nodes
-            max_display_nodes = 8  # Maximum number of nodes to display in a layer
-            
-            # Add title
-            fig.update_layout(
-                title={
-                    'text': f"Neural Network Architecture: Multi-layer Perceptron (MLP)",
-                    'y': 0.95,
-                    'x': 0.5,
-                    'xanchor': 'center',
-                    'yanchor': 'top'
-                }
-            )
-            
-            # Add legend at the top
-            legend_items = [
-                {'name': 'Input', 'color': self.layer_colors['input']},
-                {'name': 'FC-1', 'color': self.layer_colors['fc']},
-                {'name': 'ReLU-1', 'color': self.layer_colors['activation']}, 
-                {'name': 'FC-2', 'color': self.layer_colors['fc']},
-                {'name': 'ReLU-2', 'color': self.layer_colors['activation']},
-                {'name': 'Output', 'color': self.layer_colors['output']}
-            ]
-            
-            for i, item in enumerate(legend_items):
-                # Add a "square" marker for each legend item
-                fig.add_trace(go.Scatter(
-                    x=[i], 
-                    y=[1],
-                    mode='markers',
-                    marker=dict(
-                        color=item['color'],
-                        size=15,
-                        symbol='square',
-                        line=dict(width=1, color='rgba(0,0,0,0.5)')
-                    ),
-                    name=item['name'],
-                    showlegend=True
-                ))
-            
-            # Draw each layer with its neurons
-            for i, layer in enumerate(layers):
-                x_pos = i * layer_spacing
-                
-                # Layer header (title and node count)
-                fig.add_annotation(
-                    x=x_pos,
-                    y=max_display_nodes * node_spacing + 50,
-                    text=f"{layer['name']}<br>({layer['size']} nodes)",
-                    showarrow=False,
-                    font=dict(size=12)
-                )
-                
-                # Display nodes (limited to max_display_nodes)
-                display_nodes = min(layer['size'], max_display_nodes)
-                for j in range(display_nodes):
-                    y_pos = j * node_spacing
-                    
-                    # Add node marker
-                    fig.add_trace(go.Scatter(
-                        x=[x_pos],
-                        y=[y_pos],
-                        mode='markers',
-                        marker=dict(
-                            color=layer['color'],
-                            size=15,
-                            symbol='square',
-                            line=dict(width=1, color='rgba(0,0,0,0.5)')
-                        ),
-                        hoverinfo='text',
-                        hovertext=f"{layer['name']} Node {j+1}",
-                        showlegend=False
-                    ))
-                
-                # Add "..." to indicate more nodes if needed
-                if layer['size'] > max_display_nodes:
-                    fig.add_annotation(
-                        x=x_pos,
-                        y=(display_nodes + 0.5) * node_spacing,
-                        text="...",
-                        showarrow=False,
-                        font=dict(size=16)
-                    )
-            
-            # Set axis properties
-            fig.update_layout(
-                width=1000,
-                height=600,
-                plot_bgcolor='rgba(240, 240, 240, 0.8)',
-                xaxis=dict(
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=False
-                ),
-                yaxis=dict(
-                    showticklabels=False,
-                    showgrid=False,
-                    zeroline=False
-                ),
-                margin=dict(t=100, b=20, l=20, r=20),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="center",
-                    x=0.5
-                )
-            )
-            
-            return fig
-        else:
-            # Placeholder for other model types
-            fig = go.Figure()
-            fig.add_annotation(
-                x=0.5, y=0.5,
-                text=f"Interactive visualization not implemented for {hyperparams['Model Type']}",
-                showarrow=False,
-                font=dict(size=16)
-            )
-            fig.update_layout(
-                width=800,
-                height=600
-            )
-            return fig
+        
+        return structure
     
     def create_interactive_activation_viz(self, sample_input, sample_label=None):
         """Delegate to activation tracer"""
@@ -490,119 +608,203 @@ class NetworkVisualizer:
         ax.set_title('Decision Boundary')
         return fig
 
-    def visualize_pca_projection(self, X, y, layer_outputs=None):
-        """Visualize PCA projection of the data and layer outputs"""
-        if layer_outputs is None:
-            # Just visualize the input data
-            pca = PCA(n_components=2)
-            X_pca = pca.fit_transform(X)
-            
-            fig, ax = plt.subplots(figsize=(10, 8))
-            scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', 
-                                s=50, alpha=0.8, edgecolors='w')
-            
-            # Add a legend
-            legend1 = ax.legend(*scatter.legend_elements(),
-                              loc="upper right", title="Classes")
-            ax.add_artist(legend1)
-            
-            # Add labels and title
-            ax.set_xlabel('Principal Component 1')
-            ax.set_ylabel('Principal Component 2')
-            ax.set_title('PCA Projection of Input Data')
-            
-            return fig
+    def visualize_pca_projection(self, X, y, layer_outputs):
+        """
+        Visualize PCA projections of the data at different layers of the network.
+        
+        Args:
+            X: Input data
+            y: Labels
+            layer_outputs: Dictionary of layer outputs
+        
+        Returns:
+            Plotly figure with PCA projections
+        """
+        # Create subplots
+        n_plots = len(layer_outputs) + 1  # Input data + each layer
+        fig = make_subplots(rows=1, cols=n_plots, 
+                            subplot_titles=["Input Data"] + list(layer_outputs.keys()))
+        
+        # Get unique classes and their names
+        unique_classes = np.unique(y)
+        
+        # Ensure we have proper class names
+        if hasattr(self, 'label_names') and len(self.label_names) >= len(unique_classes):
+            class_names = [self.label_names[int(cls)] for cls in unique_classes]
         else:
-            # Visualize projections at each layer
-            fig, axes = plt.subplots(1, len(layer_outputs) + 1, figsize=(5 * (len(layer_outputs) + 1), 5))
+            class_names = [f"Class {i}" for i in unique_classes]
+        
+        # Create a color map for the classes
+        colors = px.colors.qualitative.Set1[:len(unique_classes)]
+        
+        # PCA for input data
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X)
+        
+        # Plot input data
+        for i, cls in enumerate(unique_classes):
+            mask = (y == cls)
+            fig.add_trace(
+                go.Scatter(
+                    x=X_pca[mask, 0],
+                    y=X_pca[mask, 1],
+                    mode='markers',
+                    marker=dict(color=colors[i], size=8),
+                    name=class_names[i],  # Use proper class name
+                    legendgroup=f"class_{cls}",  # Use consistent legend group
+                    showlegend=True
+                ),
+                row=1, col=1
+            )
+        
+        # PCA for each layer
+        for i, (layer_name, layer_output) in enumerate(layer_outputs.items()):
+            # Convert to numpy if tensor
+            if torch.is_tensor(layer_output):
+                layer_output = layer_output.detach().cpu().numpy()
             
-            # Plot input data projection
+            # Reshape if needed
+            if len(layer_output.shape) > 2:
+                layer_output = layer_output.reshape(layer_output.shape[0], -1)
+            
+            # Apply PCA
             pca = PCA(n_components=2)
-            X_pca = pca.fit_transform(X)
+            layer_pca = pca.fit_transform(layer_output)
             
-            scatter = axes[0].scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', 
-                                     s=50, alpha=0.8, edgecolors='w')
-            
-            # Add a legend to the first plot
-            legend1 = axes[0].legend(*scatter.legend_elements(),
-                                   loc="upper right", title="Classes")
-            axes[0].add_artist(legend1)
-            
-            axes[0].set_xlabel('PC1')
-            axes[0].set_ylabel('PC2')
-            axes[0].set_title('Input Data')
-            
-            # Plot layer outputs
-            for i, (name, outputs) in enumerate(layer_outputs.items()):
-                # For high-dimensional layers, use PCA
-                pca = PCA(n_components=2)
-                layer_pca = pca.fit_transform(outputs.detach().numpy())
-                
-                scatter = axes[i+1].scatter(layer_pca[:, 0], layer_pca[:, 1], c=y, 
-                                         cmap='viridis', s=50, alpha=0.8, edgecolors='w')
-                
-                axes[i+1].set_xlabel('PC1')
-                axes[i+1].set_ylabel('PC2')
-                axes[i+1].set_title(f'PCA: {name}')
-            
-            plt.tight_layout()
-            return fig
+            # Plot each class with proper labels
+            for j, cls in enumerate(unique_classes):
+                mask = (y == cls)
+                fig.add_trace(
+                    go.Scatter(
+                        x=layer_pca[mask, 0],
+                        y=layer_pca[mask, 1],
+                        mode='markers',
+                        marker=dict(color=colors[j], size=8),
+                        name=class_names[j],
+                        legendgroup=f"class_{cls}",  # Use consistent legend group
+                        showlegend=False  # Don't show duplicate legends
+                    ),
+                    row=1, col=i+2
+                )
+        
+        # Update layout with a cleaner legend
+        fig.update_layout(
+            height=500,
+            width=250 * n_plots,
+            title="PCA Projections Across Network Layers",
+            legend_title="Classes",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        # Update axes
+        for i in range(n_plots):
+            fig.update_xaxes(title_text="PC1", row=1, col=i+1)
+            fig.update_yaxes(title_text="PC2", row=1, col=i+1)
+        
+        return fig
 
-    def visualize_tsne_projection(self, X, y, layer_outputs=None, perplexity=30):
-        """Visualize t-SNE projection of the data and layer outputs"""
-        if layer_outputs is None:
-            # Just visualize the input data
-            tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
-            X_tsne = tsne.fit_transform(X)
-            
-            fig, ax = plt.subplots(figsize=(10, 8))
-            scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', 
-                                s=50, alpha=0.8, edgecolors='w')
-            
-            # Add a legend
-            legend1 = ax.legend(*scatter.legend_elements(),
-                                  loc="upper right", title="Classes")
-            ax.add_artist(legend1)
-            
-            # Add labels and title
-            ax.set_xlabel('t-SNE Feature 1')
-            ax.set_ylabel('t-SNE Feature 2')
-            ax.set_title('t-SNE Projection of Input Data')
-            
-            return fig
+    def visualize_tsne_projection(self, X, y, layer_outputs, perplexity=30):
+        """
+        Visualize t-SNE projections of the data at different layers of the network.
+        
+        Args:
+            X: Input data
+            y: Labels
+            layer_outputs: Dictionary of layer outputs
+            perplexity: Perplexity parameter for t-SNE
+        
+        Returns:
+            Plotly figure with t-SNE projections
+        """
+        # Create subplots
+        n_plots = len(layer_outputs) + 1  # Input data + each layer
+        fig = make_subplots(rows=1, cols=n_plots, 
+                            subplot_titles=["Input Data"] + list(layer_outputs.keys()))
+        
+        # Get unique classes and their names
+        unique_classes = np.unique(y)
+        
+        # Ensure we have proper class names
+        if hasattr(self, 'label_names') and len(self.label_names) >= len(unique_classes):
+            class_names = [self.label_names[int(cls)] for cls in unique_classes]
         else:
-            # Visualize projections at each layer
-            fig, axes = plt.subplots(1, len(layer_outputs) + 1, figsize=(5 * (len(layer_outputs) + 1), 5))
+            class_names = [f"Class {i}" for i in unique_classes]
+        
+        # Create a color map for the classes
+        colors = px.colors.qualitative.Set1[:len(unique_classes)]
+        
+        # t-SNE for input data
+        tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
+        X_tsne = tsne.fit_transform(X)
+        
+        # Plot input data with proper class labels
+        for i, cls in enumerate(unique_classes):
+            mask = (y == cls)
+            fig.add_trace(
+                go.Scatter(
+                    x=X_tsne[mask, 0],
+                    y=X_tsne[mask, 1],
+                    mode='markers',
+                    marker=dict(color=colors[i], size=8),
+                    name=class_names[i],  # Use proper class name
+                    legendgroup=f"class_{cls}",  # Use consistent legend group
+                    showlegend=True
+                ),
+                row=1, col=1
+            )
+        
+        # t-SNE for each layer
+        for i, (layer_name, layer_output) in enumerate(layer_outputs.items()):
+            # Convert to numpy if tensor
+            if torch.is_tensor(layer_output):
+                layer_output = layer_output.detach().cpu().numpy()
             
-            # Plot input data projection
+            # Reshape if needed
+            if len(layer_output.shape) > 2:
+                layer_output = layer_output.reshape(layer_output.shape[0], -1)
+            
+            # Apply t-SNE
             tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
-            X_tsne = tsne.fit_transform(X)
+            layer_tsne = tsne.fit_transform(layer_output)
             
-            scatter = axes[0].scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', 
-                                     s=50, alpha=0.8, edgecolors='w')
-            
-            # Add a legend to the first plot
-            legend1 = axes[0].legend(*scatter.legend_elements(),
-                                   loc="upper right", title="Classes")
-            axes[0].add_artist(legend1)
-            
-            axes[0].set_xlabel('t-SNE 1')
-            axes[0].set_ylabel('t-SNE 2')
-            axes[0].set_title('Input Data')
-            
-            # Plot layer outputs
-            for i, (name, outputs) in enumerate(layer_outputs.items()):
-                layer_tsne = tsne.fit_transform(outputs.detach().numpy())
-                
-                scatter = axes[i+1].scatter(layer_tsne[:, 0], layer_tsne[:, 1], c=y, 
-                                         cmap='viridis', s=50, alpha=0.8, edgecolors='w')
-                
-                axes[i+1].set_xlabel('t-SNE 1')
-                axes[i+1].set_ylabel('t-SNE 2')
-                axes[i+1].set_title(f't-SNE: {name}')
-            
-            plt.tight_layout()
-            return fig
+            # Plot each class with proper labels
+            for j, cls in enumerate(unique_classes):
+                mask = (y == cls)
+                fig.add_trace(
+                    go.Scatter(
+                        x=layer_tsne[mask, 0],
+                        y=layer_tsne[mask, 1],
+                        mode='markers',
+                        marker=dict(color=colors[j], size=8),
+                        name=class_names[j],
+                        legendgroup=f"class_{cls}",  # Use consistent legend group
+                        showlegend=False  # Don't show duplicate legends
+                    ),
+                    row=1, col=i+2
+                )
+        
+        # Update layout with a cleaner legend
+        fig.update_layout(
+            height=500,
+            width=250 * n_plots,
+            title="t-SNE Projections Across Network Layers",
+            legend_title="Classes",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        return fig
 
     def visualize_activations(self, input_data):
         """Visualize activations at each layer for a specific input example"""

@@ -483,67 +483,147 @@ if st.session_state.model is not None:
         metrics = st.session_state.performance_metrics
         st.metric("Test Accuracy", f"{metrics['accuracy']:.4f}")
         
+        # Create columns for the visualizations
         col1, col2 = st.columns(2)
         
+        # Create containers with fixed heights for both visualizations
         with col1:
             st.subheader("Confusion Matrix")
             
-            # Get label names and confusion matrix
-            label_names = st.session_state.data_info['label_names']
-            conf_matrix = metrics['confusion_matrix']
+            # Create a container with fixed height for the confusion matrix
+            cm_container = st.container()
             
-            # Create a better confusion matrix visualization
-            fig, ax = plt.subplots(figsize=(10, 8))
+            with cm_container:
+                # Get label names and confusion matrix
+                label_names = st.session_state.data_info['label_names']
+                conf_matrix = metrics['confusion_matrix']
+                
+                # Create confusion matrix visualization
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                # Use a more appealing colormap
+                cmap = plt.cm.Blues
+                im = ax.imshow(conf_matrix, interpolation='nearest', cmap=cmap)
+                
+                # Add title and labels
+                ax.set_title('Confusion Matrix', fontsize=16)
+                ax.set_xlabel('Predicted Label', fontsize=14)
+                ax.set_ylabel('True Label', fontsize=14)
+                
+                # Add colorbar
+                cbar = plt.colorbar(im, ax=ax)
+                cbar.set_label('Count', rotation=270, labelpad=15, fontsize=12)
+                
+                # Add tick marks and class names
+                tick_marks = np.arange(len(label_names))
+                ax.set_xticks(tick_marks)
+                ax.set_yticks(tick_marks)
+                ax.set_xticklabels(label_names, fontsize=12, rotation=45, ha='right')
+                ax.set_yticklabels(label_names, fontsize=12)
+                
+                # Add text annotations with counts and percentages
+                thresh = conf_matrix.max() / 2.0
+                for i in range(conf_matrix.shape[0]):
+                    for j in range(conf_matrix.shape[1]):
+                        value = conf_matrix[i, j]
+                        total = conf_matrix[i].sum()
+                        percentage = value / total * 100 if total > 0 else 0
+                        
+                        # Format text to show count and percentage
+                        text = f"{value}\n({percentage:.1f}%)"
+                        
+                        # Choose text color based on background darkness
+                        color = "white" if conf_matrix[i, j] > thresh else "black"
+                        
+                        ax.text(j, i, text, ha="center", va="center", 
+                               color=color, fontsize=12, fontweight="bold")
+                
+                # Add grid lines for better readability
+                ax.set_xticks(np.arange(-.5, len(label_names), 1), minor=True)
+                ax.set_yticks(np.arange(-.5, len(label_names), 1), minor=True)
+                ax.grid(which="minor", color="gray", linestyle='-', linewidth=0.5, alpha=0.2)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+
+        with col2:
+            st.subheader("ROC Curve")
             
-            # Use a more appealing colormap
-            cmap = plt.cm.Blues
-            im = ax.imshow(conf_matrix, interpolation='nearest', cmap=cmap)
+            # Create a container with fixed height for the ROC curve
+            roc_container = st.container()
             
-            # Add title and labels
-            ax.set_title('Confusion Matrix', fontsize=16)
-            ax.set_xlabel('Predicted Label', fontsize=14)
-            ax.set_ylabel('True Label', fontsize=14)
-            
-            # Add colorbar
-            cbar = plt.colorbar(im, ax=ax)
-            cbar.set_label('Count', rotation=270, labelpad=15, fontsize=12)
-            
-            # Add tick marks and class names
-            tick_marks = np.arange(len(label_names))
-            ax.set_xticks(tick_marks)
-            ax.set_yticks(tick_marks)
-            ax.set_xticklabels(label_names, fontsize=12, rotation=45, ha='right')
-            ax.set_yticklabels(label_names, fontsize=12)
-            
-            # Add text annotations with counts and percentages
-            thresh = conf_matrix.max() / 2.0
-            for i in range(conf_matrix.shape[0]):
-                for j in range(conf_matrix.shape[1]):
-                    value = conf_matrix[i, j]
-                    total = conf_matrix[i].sum()
-                    percentage = value / total * 100 if total > 0 else 0
+            with roc_container:
+                # Get predictions and true labels for ROC curve
+                y_true = metrics.get('y_true', [])
+                y_score = metrics.get('y_score', [])
+                
+                # Check if we have the necessary data for ROC curve
+                if len(y_true) > 0 and len(y_score) > 0:
+                    # Create ROC curve
+                    fig, ax = plt.subplots(figsize=(10, 8))
                     
-                    # Format text to show count and percentage
-                    text = f"{value}\n({percentage:.1f}%)"
+                    # For binary classification
+                    if len(label_names) == 2:
+                        from sklearn.metrics import roc_curve, auc
+                        fpr, tpr, _ = roc_curve(y_true, y_score[:, 1])
+                        roc_auc = auc(fpr, tpr)
+                        
+                        # Plot ROC curve
+                        ax.plot(fpr, tpr, lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+                        ax.plot([0, 1], [0, 1], 'k--', lw=2)
+                        ax.set_xlim([0.0, 1.0])
+                        ax.set_ylim([0.0, 1.05])
+                        ax.set_xlabel('False Positive Rate', fontsize=14)
+                        ax.set_ylabel('True Positive Rate', fontsize=14)
+                        ax.set_title('Receiver Operating Characteristic', fontsize=16)
+                        ax.legend(loc="lower right")
                     
-                    # Choose text color based on background darkness
-                    color = "white" if conf_matrix[i, j] > thresh else "black"
+                    # For multi-class classification
+                    else:
+                        from sklearn.metrics import roc_curve, auc
+                        from sklearn.preprocessing import label_binarize
+                        
+                        # Binarize the labels for multi-class ROC
+                        classes = np.unique(y_true)
+                        y_true_bin = label_binarize(y_true, classes=classes)
+                        
+                        # Compute ROC curve and ROC area for each class
+                        fpr = dict()
+                        tpr = dict()
+                        roc_auc = dict()
+                        
+                        for i, class_name in enumerate(label_names):
+                            fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_score[:, i])
+                            roc_auc[i] = auc(fpr[i], tpr[i])
+                            
+                            # Plot ROC curve for each class
+                            color = plt.cm.tab10(i % 10)
+                            ax.plot(fpr[i], tpr[i], color=color, lw=2,
+                                    label=f'{class_name} (area = {roc_auc[i]:.2f})')
                     
-                    ax.text(j, i, text, ha="center", va="center", 
-                           color=color, fontsize=12, fontweight="bold")
-            
-            # Add grid lines for better readability
-            ax.set_xticks(np.arange(-.5, len(label_names), 1), minor=True)
-            ax.set_yticks(np.arange(-.5, len(label_names), 1), minor=True)
-            ax.grid(which="minor", color="gray", linestyle='-', linewidth=0.5, alpha=0.2)
-            
-            # Tight layout to ensure everything fits
-            plt.tight_layout()
-            
-            # Display the figure
-            st.pyplot(fig)
-            
-            # Add explanation of confusion matrix
+                    ax.plot([0, 1], [0, 1], 'k--', lw=2)
+                    ax.set_xlim([0.0, 1.0])
+                    ax.set_ylim([0.0, 1.05])
+                    ax.set_xlabel('False Positive Rate', fontsize=14)
+                    ax.set_ylabel('True Positive Rate', fontsize=14)
+                    ax.set_title('Multi-class ROC', fontsize=16)
+                    ax.legend(loc="lower right")
+                
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                else:
+                    # If no ROC data, create an empty figure with the same height
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    ax.text(0.5, 0.5, "ROC curve data not available.\nMake sure to include prediction scores in the metrics.",
+                            ha='center', va='center', fontsize=14)
+                    ax.set_axis_off()
+                    plt.tight_layout()
+                    st.pyplot(fig)
+
+        # Create a new row for the expanders
+        exp_col1, exp_col2 = st.columns(2)
+
+        with exp_col1:
             with st.expander("How to interpret the confusion matrix"):
                 st.markdown("""
                 ### Understanding the Confusion Matrix
@@ -561,95 +641,9 @@ if st.session_state.model is not None:
                 
                 A perfect model would have all instances on the diagonal.
                 """)
-        
-        with col2:
-            st.subheader("ROC Curve")
-            
-            # Get predictions and true labels for ROC curve
-            y_true = metrics.get('y_true', [])
-            y_score = metrics.get('y_score', [])
-            
-            # Check if we have the necessary data for ROC curve
-            if len(y_true) > 0 and len(y_score) > 0:
-                # Create ROC curve
-                fig, ax = plt.subplots(figsize=(10, 8))
-                
-                # For binary classification
-                if len(label_names) == 2:
-                    from sklearn.metrics import roc_curve, auc
-                    fpr, tpr, _ = roc_curve(y_true, y_score[:, 1])
-                    roc_auc = auc(fpr, tpr)
-                    
-                    # Plot ROC curve
-                    ax.plot(fpr, tpr, lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-                    ax.plot([0, 1], [0, 1], 'k--', lw=2)
-                    ax.set_xlim([0.0, 1.0])
-                    ax.set_ylim([0.0, 1.05])
-                    ax.set_xlabel('False Positive Rate', fontsize=14)
-                    ax.set_ylabel('True Positive Rate', fontsize=14)
-                    ax.set_title('Receiver Operating Characteristic', fontsize=16)
-                    ax.legend(loc="lower right")
-                
-                # For multi-class classification
-                else:
-                    from sklearn.metrics import roc_curve, auc
-                    from sklearn.preprocessing import label_binarize
-                    
-                    # Binarize the labels for multi-class ROC
-                    classes = np.unique(y_true)
-                    y_true_bin = label_binarize(y_true, classes=classes)
-                    
-                    # Compute ROC curve and ROC area for each class
-                    fpr = dict()
-                    tpr = dict()
-                    roc_auc = dict()
-                    
-                    for i, class_name in enumerate(label_names):
-                        fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_score[:, i])
-                        roc_auc[i] = auc(fpr[i], tpr[i])
-                        
-                        # Plot ROC curve for each class
-                        # Use a colormap that's compatible with matplotlib versions
-                        color = plt.cm.tab10(i % 10)
-                        ax.plot(fpr[i], tpr[i], color=color, lw=2,
-                                label=f'{class_name} (area = {roc_auc[i]:.2f})')
-                    
-                    ax.plot([0, 1], [0, 1], 'k--', lw=2)
-                    ax.set_xlim([0.0, 1.0])
-                    ax.set_ylim([0.0, 1.05])
-                    ax.set_xlabel('False Positive Rate', fontsize=14)
-                    ax.set_ylabel('True Positive Rate', fontsize=14)
-                    ax.set_title('Multi-class ROC', fontsize=16)
-                    ax.legend(loc="lower right")
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-            else:
-                st.info("ROC curve data not available. Make sure to include prediction scores in the metrics.")
-        
-        # Add a single expander for both visualizations
-        with st.expander("How to interpret these visualizations"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("""
-                ### Understanding the Confusion Matrix
-                
-                The confusion matrix shows how well the model is classifying each class:
-                
-                - **Rows**: True labels (actual classes)
-                - **Columns**: Predicted labels (what the model predicted)
-                - **Diagonal elements**: Correctly classified instances
-                - **Off-diagonal elements**: Misclassified instances
-                
-                Each cell shows:
-                - The **count** of instances
-                - The **percentage** of the true class
-                
-                A perfect model would have all instances on the diagonal.
-                """)
-            
-            with col2:
+
+        with exp_col2:
+            with st.expander("How to interpret the ROC curve"):
                 st.markdown("""
                 ### Understanding the ROC Curve
                 
@@ -662,42 +656,9 @@ if st.session_state.model is not None:
                 - 1.0 = Perfect classifier
                 - 0.5 = No better than random guessing (diagonal line)
                 - Higher AUC indicates better model performance
+                
+                For multi-class problems, we plot one curve per class (one-vs-rest approach).
                 """)
-        
-        # Classification Report (fixed to handle missing dict)
-        st.subheader("Classification Report")
-        
-        # Check if classification_report_dict exists, otherwise use the text version
-        if 'classification_report_dict' in metrics:
-            report_df = pd.DataFrame(metrics['classification_report_dict']).transpose()
-            
-            # Drop unnecessary rows
-            if 'accuracy' in report_df.index:
-                accuracy_row = report_df.loc[['accuracy']]
-                report_df = report_df.drop(['accuracy', 'macro avg', 'weighted avg'])
-                
-                # Reorder columns for better readability
-                if 'support' in report_df.columns:
-                    cols = ['precision', 'recall', 'f1-score', 'support']
-                    report_df = report_df[cols]
-                
-                # Format the values
-                for col in ['precision', 'recall', 'f1-score']:
-                    if col in report_df.columns:
-                        report_df[col] = report_df[col].map(lambda x: f"{x:.2f}")
-                
-                # Display the report as a styled dataframe
-                st.dataframe(report_df, use_container_width=True)
-                
-                # Display accuracy separately
-                if 'accuracy' in accuracy_row.columns:
-                    st.metric("Overall Accuracy", f"{accuracy_row['accuracy'].values[0]:.2f}")
-        else:
-            # Fallback to text display if dataframe conversion fails
-            if 'classification_report' in metrics:
-                st.text(metrics['classification_report'])
-            else:
-                st.info("Detailed classification report not available.")
     
     # Tab 4: Feature Importance
     with tab4:
